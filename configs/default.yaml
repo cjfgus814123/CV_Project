@@ -1,0 +1,30 @@
+# 모든 임계값·크기·모델명은 여기서 읽는다 (CLAUDE.md 10장).
+model:
+  name: yolo11x-seg.pt      # Ultralytics seg 모델 (l 또는 x)
+  imgsz: 1280               # 먼 차 검출용 큰 입력
+  conf: 0.25
+  classes: [2, 5, 7]        # COCO car, bus, truck
+
+sampling:
+  fps: 2                    # 1차 기본. 3차는 10 이상
+
+geometry:
+  slot_size_m: [2.5, 5.0]   # 표준 주차칸 폭 x 길이. 실측과 다르면 수정
+  car_size_m: [1.8, 4.7]    # 2차 footprint용 표준 차 크기
+  bev_px_per_m: 20
+
+contact:
+  mode: mask_bottom_center  # | bbox_bottom_center | bbox_center
+
+occupancy:
+  boundary_tol_m: 0.3       # 임시값: 칸 경계 허용 거리, 튜닝 clip에서 조정
+  vis_judge: 0.7            # 가시 비율 >= 이면 판정
+  vis_unknown: 0.3          # 가시 비율 < 이면 판단불가(-1)
+  smooth_n: 5               # 시간 보정 다수결 프레임 수
+
+footprint:                  # 2차
+  tau_straddle: 0.2         # 임시값
+
+illegal:                    # 3차
+  v_stop_mps: 0.3           # 임시값
+  t_stop_sec: 60            # 임시값
