@@ -60,7 +60,8 @@ data/                                   # .gitignore 대상 (영상은 공유 �
   cams/<lot>_<cam>/H.json               # 대응점, H, 재투영 오차
   cams/<lot>_<cam>/ref_frame.png        # H 계산에 쓴 기준 프레임 (빈 상태)
   clips/<clip_id>/video.mp4             # clip_id 예: lotA_cam1_empty, lotA_cam1_full
-  clips/<clip_id>/meta.json             # {"lot": "lotA", "cam": "lotA_cam1", "condition": "empty|mid|full|staged"}
+  clips/<clip_id>/meta.json             # {"lot": "lotA", "cam": "lotA_cam1", "condition": "empty|mid|full|staged", "valid_sec": [시작, 끝]}
+                                        # valid_sec: 카메라가 고정된 구간 (촬영 시작·끝의 흔들림 제외)
   clips/<clip_id>/gt_occupancy.csv      # 평가용 정답
   clips/<clip_id>/gt_events.csv         # 3차용 이벤트 정답
 outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
@@ -139,6 +140,7 @@ clip → 프레임 샘플링(기본 2fps, 3차는 10fps 이상)
 
 **판단불가 (-1)**
 - 영상 네 모서리를 H로 투영한 다각형 = 맵 위 **가시 영역**.
+  영상 윗부분이 지평선 너머(하늘)면 투영이 무한대로 발산하므로, 지평선 아래만 남기고 맵 범위와 교집합을 취한다.
 - 칸의 가시 비율 ≥ 0.7 → 판정, 0.3~0.7 → 불확실(판정하되 표시), < 0.3 → 판단불가.
 - (확장) 앞차에 가려진 칸 처리.
 - 결과에 **커버리지(관측 가능한 칸 / 전체 칸)**를 함께 기록.
@@ -295,8 +297,11 @@ CV_Project/                   # 저장소 루트
 ## 12. 작업 순서 (Claude Code에 단계별로 요청)
 
 1. 저장소 뼈대: 디렉터리, requirements.txt, .gitignore, configs/default.yaml, 빈 함수 시그니처
-2. `homography.py`, `contact.py`, `occupancy.py` + 합성 데이터 pytest (데이터 없이 진행 가능)
-3. `tools/setup_cam.py`, `tools/build_map.py` (대응점 클릭 → H → 탑뷰 → 칸 정의)
+2a. `homography.py` + 합성 데이터 pytest
+3. `tools/setup_cam.py`, `tools/build_map.py` (대응점 클릭 → H → 탑뷰 → 칸 정의).
+   0.5배 렌즈 영상이면 그 전에 `calibrate.py`로 체커보드 캘리브레이션
+2b. `contact.py`, `occupancy.py` + 합성 데이터 pytest
+   (실제 영상으로 2D 맵을 먼저 확인하려고 2단계를 둘로 나눔)
 4. `detect.py` (YOLO-seg, 캐시) → `pipeline.py` + `render.py`로 **1차 Split-View 결과 영상**
 5. `tools/sample_frames.py`, `tools/label_gt.py`, `eval/evaluate.py`, `baseline.py`, `eval/compare.py` → **1차 정량 평가**
 6. (2차) `footprint.py` + 침범 평가

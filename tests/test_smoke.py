@@ -18,7 +18,7 @@ def test_import(name):
 
 def test_default_config():
     cfg = load_config(ROOT / "configs/default.yaml")
-    for key in ["model", "sampling", "geometry", "contact", "occupancy", "footprint", "illegal"]:
+    for key in ["model", "homography", "sampling", "geometry", "contact", "occupancy", "footprint", "illegal"]:
         assert key in cfg, key
     assert cfg["contact"]["mode"] in {"mask_bottom_center", "bbox_bottom_center", "bbox_center"}
     assert cfg["occupancy"]["vis_unknown"] < cfg["occupancy"]["vis_judge"]
