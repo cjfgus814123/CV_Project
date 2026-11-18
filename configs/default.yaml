@@ -23,6 +23,8 @@ geometry:
 
 contact:
   mode: mask_bottom_center  # | bbox_bottom_center | bbox_center
+  edge_margin_px: 2         # 박스가 좌·우·아래 경계에서 이 안이면 truncated
+  depth_offset_m: 0.0       # 접점을 맵에서 카메라 반대쪽으로 미는 거리. 0.9(차 폭 절반) 권장, 승인 대기 중
 
 occupancy:
   boundary_tol_m: 0.3       # 임시값: 칸 경계 허용 거리, 튜닝 clip에서 조정
