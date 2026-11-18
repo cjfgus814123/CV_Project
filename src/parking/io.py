@@ -1,6 +1,7 @@
 """map/H/meta/config 로드·저장."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -32,4 +33,4 @@ def save_cam(cam_dir: str | Path, cam_data: dict) -> None:
 
 def load_clip_meta(clip_dir: str | Path) -> dict:
     """data/clips/<clip_id>/meta.json을 읽는다."""
-    raise NotImplementedError
+    return json.loads((Path(clip_dir) / "meta.json").read_text(encoding="utf-8"))

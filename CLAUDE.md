@@ -114,6 +114,9 @@ clip → 프레임 샘플링(기본 2fps, 3차는 10fps 이상)
 - COCO 사전학습 가중치를 그대로 사용 → **학습용 데이터셋 구축 불필요.**
   - 사용 클래스: car(2), bus(5), truck(7). SUV·승합차가 truck으로 잡히는 경우가 많다.
 - 먼 차 검출을 위해 입력 해상도(`imgsz`)를 크게 (예: 1280) 설정할 수 있게 한다.
+- **현재 선택 (2026-11-19, lotA_cam1_full 프레임 3장 비교)**: `yolo26x-seg`, `imgsz=1920`.
+  yolo11x-seg는 1920에서 지붕 구조물을 truck으로 오검출. 1280 대비 1920에서 먼 차 신뢰도 0.5~0.6 → 0.8~0.9.
+  처리 속도 약 0.33초/검출 프레임 (RTX 4060, 영상 디코딩 포함; 추론만 약 0.12초).
 - 우리 영상에서 미검출이 많을 때만 파인튜닝을 검토한다 (기본 계획에는 없음).
 
 ### 5.4 지면 접점 (1차의 핵심)
@@ -295,9 +298,12 @@ CV_Project/                   # 저장소 루트
 ```json
 {"frame_idx": 120, "time_sec": 4.0, "dets": [
   {"track_id": 7, "cls": 2, "conf": 0.88, "bbox_img": [x1,y1,x2,y2],
-   "mask_rle": "...", "contact_img": [x,y], "contact_map": [X,Y], "truncated": false}
+   "mask_polys_img": [[[x,y], ...], ...], "contact_img": [x,y], "contact_map": [X,Y], "truncated": false}
 ]}
 ```
+- 마스크는 RLE 대신 **영상 픽셀 다각형 목록**으로 저장한다 (가로등·나무에 가려 조각나면 조각마다 1개).
+  Ultralytics `masks.xy`는 조각들을 한 다각형으로 이어 붙여 모양이 깨지므로 쓰지 않는다 (`detect.mask_to_polys`).
+- 프레임은 항상 처음부터 순서대로 읽어 번호를 센다 (seek 금지: 폰 영상에서 번호가 어긋날 수 있음).
 
 ## 12. 작업 순서 (Claude Code에 단계별로 요청)
 

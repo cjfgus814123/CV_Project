@@ -1,7 +1,8 @@
 # 모든 임계값·크기·모델명은 여기서 읽는다 (CLAUDE.md 10장).
 model:
-  name: yolo11x-seg.pt      # Ultralytics seg 모델 (l 또는 x)
-  imgsz: 1280               # 먼 차 검출용 큰 입력
+  name: yolo26x-seg.pt      # 2026-11-19 비교: yolo26x가 yolo11x보다 오검출 적음 (11x는 지붕을 truck으로 검출)
+  weights_dir: models       # 처음 실행 시 자동 다운로드 (COCO 사전학습)
+  imgsz: 1920               # 원본 폭 그대로. 1280 대비 먼 차 신뢰도 0.5~0.6 -> 0.8~0.9, 프레임당 약 120ms
   conf: 0.25
   classes: [2, 5, 7]        # COCO car, bus, truck
 
