@@ -5,6 +5,10 @@ model:
   conf: 0.25
   classes: [2, 5, 7]        # COCO car, bus, truck
 
+calibration:
+  fix_k3: true             # k3 고정: 가장자리 발산 방지 (체커보드가 가장자리를 덜 덮을 때 필수)
+  alpha: 1.0               # undistort: 1=원본 픽셀 모두 유지(검은 가장자리), 0=잘라냄
+
 homography:
   ransac_thresh_m: 0.15   # 맵 좌표 기준(m). OpenCV 기본 3.0은 3m라 너무 느슨
 
