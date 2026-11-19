@@ -12,6 +12,7 @@ calibration:
 
 homography:
   ransac_thresh_m: 0.15   # 맵 좌표 기준(m). OpenCV 기본 3.0은 3m라 너무 느슨
+  bev_margin_m: 20        # 탑뷰 범위 = 클릭한 점들의 범위 ± 이 값 (∩ 화면 가시 영역)
 
 sampling:
   fps: 2                    # 1차 기본. 3차는 10 이상

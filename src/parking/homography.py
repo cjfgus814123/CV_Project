@@ -100,3 +100,32 @@ def visible_region_map(H: np.ndarray, region_img: np.ndarray,
     if not poly.is_valid:
         poly = poly.buffer(0)
     return poly.intersection(box(*bounds_map))
+
+
+def map_polyline_to_img(pts_map, H: np.ndarray, ref_img, closed: bool = False, step_m: float = 0.25) -> list[np.ndarray]:
+    """맵 위 선(꺾은선·다각형)을 영상으로 투영. 지평선 너머(카메라 뒤) 구간은 버리고 조각 목록을 돌려준다.
+
+    선을 step_m 간격으로 잘게 나눠 투영하므로 영상에서도 휘지 않고 제대로 잘린다.
+    ref_img: 확실히 바닥인 영상 점 1개 (부호 기준, 예: 영상 아래 가운데).
+    """
+    Hinv = np.linalg.inv(np.asarray(H, np.float64))
+    sign = np.sign(np.asarray(H, np.float64)[2] @ [*ref_img, 1.0])  # 바닥 점의 w 부호
+    p = np.asarray(pts_map, np.float64).reshape(-1, 2)
+    if closed:
+        p = np.vstack([p, p[:1]])
+    dense = [p[0]]
+    for a, b in zip(p[:-1], p[1:]):
+        n = max(1, int(np.ceil(np.linalg.norm(b - a) / step_m)))
+        dense.extend(a + (b - a) * t for t in np.linspace(0, 1, n + 1)[1:])
+    q = np.c_[np.array(dense), np.ones(len(dense))] @ Hinv.T
+    # 영상 점 u에 대해 H·u의 w 부호가 바닥 점과 같아야 함. H·(Hinv·X) = X 이므로 q[:,2]*sign_ref 로 판정
+    ok = q[:, 2] * sign > 1e-9
+    pieces, cur = [], []
+    for good, row in zip(ok, q):
+        if good:
+            cur.append(row[:2] / row[2])
+        elif cur:
+            pieces.append(np.array(cur)); cur = []
+    if cur:
+        pieces.append(np.array(cur))
+    return [x for x in pieces if len(x) >= 2]

@@ -73,3 +73,17 @@ def test_warp_to_bev(cam):
     back = warp_to_bev(frame, cam["H"], px, origin, size)
     ys, xs = np.nonzero(back > 127)
     assert abs(xs.mean() - 200) < 2 and abs(ys.mean() - 230) < 2
+
+
+def test_map_polyline_to_img_drops_behind_camera(cam):
+    from parking.homography import map_polyline_to_img, transform_points
+
+    ref = (960, 1079)
+    y_cam = float(transform_points(np.float32([[960, 1079]]), cam["H"])[0, 1])  # 영상 맨 아래가 닿는 바닥
+    line = [[0.0, 30.0], [0.0, -30.0]]  # 카메라 앞에서 뒤로 지나가는 선
+    pieces = map_polyline_to_img(line, cam["H"], ref)
+    assert len(pieces) == 1
+    back = transform_points(pieces[0].astype(np.float32), cam["H"])
+    assert np.allclose(back[:, 0], 0, atol=1e-3)  # 같은 선 위로 되돌아옴
+    assert back[:, 1].min() > -30 and back[:, 1].max() == pytest.approx(30, abs=1e-3)
+    assert pieces[0][-1, 1] > 1079 and back[:, 1].min() < y_cam  # 화면 아래로는 계속되지만 카메라 뒤는 잘림

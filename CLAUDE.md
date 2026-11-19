@@ -56,9 +56,13 @@ Homography로 **위에서 본 2D 맵**에 옮겨 **칸별 점유 상태를 판�
 ```
 data/                                   # .gitignore 대상 (영상은 공유 드라이브)
   lots/<lot>/map.json                   # 칸·통로·금지구역·랜드마크 (맵 좌표, m)
-  lots/<lot>/map_bev.png                # 탑뷰 배경 이미지 (빈 상태 프레임을 편 것)
-  cams/<lot>_<cam>/H.json               # 대응점, H, 재투영 오차
+  lots/<lot>/map_bev.png                # 탑뷰 배경 이미지 (lot 첫 cam의 기준 프레임을 편 것. 그 cam이 맵 좌표계·탑뷰 범위를 정함)
+  lots/<lot>/map_check.png              # 탑뷰 위에 칸을 그린 검수 그림
+  cams/<lot>_<cam>/H.json               # 대응점, H, 재투영 오차, (선택) 바닥 가시 영역 ROI
+  cams/<lot>_<cam>/points.json          # setup_cam 클릭 진행 상황 (자동 저장, 이어서 하기용)
   cams/<lot>_<cam>/ref_frame.png        # H 계산에 쓴 기준 프레임 (빈 상태)
+  cams/<lot>_<cam>/bev.png              # 이 cam의 기준 프레임을 lot 탑뷰 범위로 편 것 (cam 간 정렬 확인용)
+  cams/<lot>_<cam>/map_overlay.png      # 맵 칸을 H^-1로 기준 프레임에 되돌려 그린 검수 그림
   clips/<clip_id>/video.mp4             # clip_id 예: lotA_cam1_empty, lotA_cam1_full
   clips/<clip_id>/meta.json             # {"lot": "lotA", "cam": "lotA_cam1", "condition": "empty|mid|full|staged", "valid_sec": [시작, 끝]}
                                         # valid_sec: 카메라가 고정된 구간 (촬영 시작·끝의 흔들림 제외)
@@ -80,7 +84,10 @@ outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
      (`calibrate.py`가 가장자리 커버리지를 출력·경고).
 2. **H 계산** (`tools/setup_cam.py`):
    - 빈 상태 clip에서 기준 프레임 1장을 뽑는다.
-   - 선이 잘 보이는 주차칸 모서리를 **6개 이상** 클릭하고, 각 점의 맵 좌표를 입력한다.
+   - 선이 잘 보이는 주차칸 모서리를 **6개 이상** 클릭하고, 각 점의 맵 좌표를 터미널에 입력한다.
+     - 먼저 가까운 한 줄(x = 선마다 2.5m, y = 0/5)로 첫 H를 구하고, 1m 격자를 겹쳐 확인한다.
+       다른 줄의 점은 화면에 나오는 커서의 맵 좌표(현재 H 기준)를 표준값(칸 5.0m, 직각주차 통로 6.0m)으로 반올림해 추가한다.
+     - 지붕·나무에 가린 바닥은 (선택) ROI 다각형으로 빼면 가시 영역 계산에 쓰인다 (`ground_roi_img`, 없으면 영상 네 모서리).
      - 맵 좌표는 **표준 주차칸 크기(기본 폭 2.5m × 길이 5.0m, configs에서 변경 가능)**를 가정해 정한다.
        줄자 실측은 필수가 아니며, 2~3칸을 재서 표준과 다르면 configs 값을 고친다.
      - 점은 화면 양 끝에 넓게 분포시킨다.
@@ -90,6 +97,8 @@ outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
 4. **2D 맵 칸 정의** (`tools/build_map.py`), 다음 중 하나 또는 조합:
    - (a) 규칙적인 줄은 **코드로 생성**: 시작 모서리 + 칸 폭·길이 + 개수 + 방향.
    - (b) 탑뷰 위에서 **직접 클릭**으로 폴리곤 입력 (불규칙한 칸, 통로, 금지구역).
+   - (a)는 3번 클릭(첫 칸 앞 모서리 → 줄 끝 → 첫 칸 뒤 모서리) + 칸 수. 칸 폭은 표준값이 아니라 클릭한 줄 길이 / 칸 수
+     (실제 선에 맞춤), 옆변이 줄과 수직이 아니면 평행사변형(사선 주차).
    - (c) (확장) 논문 ③ 방식 자동 검출: 탑뷰에 미디언 필터 → Otsu → Canny → 윤곽 → RDP 다각형 근사 → 사람이 검수.
    - 결과를 탑뷰 위에 겹쳐 그려 실제 주차선과 맞는지 눈으로 확인한다.
 
@@ -241,7 +250,7 @@ CV_Project/                   # 저장소 루트
     render.py                 # Split-View 영상, 2D 맵 그리기
     pipeline.py               # clip 단위 전체 실행
   tools/
-    setup_cam.py              # 기준 프레임에서 대응점 클릭 → H.json, ref_frame.png, map_bev.png
+    setup_cam.py              # 기준 프레임에서 대응점 클릭 → H.json, ref_frame.png, bev.png (lot 첫 cam이면 map.json 뼈대·map_bev.png)
     build_map.py              # 탑뷰 위 칸 생성·클릭·검수 → map.json
     sample_frames.py          # GT용 프레임 샘플링
     label_gt.py               # 칸 클릭으로 0→1→2→-1 순환, CSV 저장
@@ -277,7 +286,9 @@ CV_Project/                   # 저장소 루트
   "bev_image": "map_bev.png",
   "bev_px_per_m": 20,
   "bev_origin_m": [-2.0, -2.0],
-  "landmarks": [{"id": "L1", "xy": [0.0, 0.0]}, {"id": "L2", "xy": [2.5, 0.0]}],
+  "bev_size_px": [1200, 800],
+  "bev_cam": "lotA_cam3",
+  "landmarks": [],
   "slots": [{"id": "A01", "row": "A", "polygon": [[0,0],[2.5,0],[2.5,5],[0,5]]}],
   "aisles": [{"id": "AISLE1", "polygon": [[0,5],[30,5],[30,11],[0,11]]}],
   "no_parking": []
@@ -293,9 +304,11 @@ CV_Project/                   # 저장소 루트
   "ref_frame_idx": 0,
   "undistort": false,
   "image_size": [1920, 1080],
-  "correspondences": [{"landmark": "L1", "img": [812.0, 433.0]}],
-  "validation":      [{"landmark": "L7", "img": [950.0, 610.0]}],
+  "correspondences": [{"img": [812.0, 433.0], "map": [0.0, 0.0]}],
+  "validation":      [{"img": [950.0, 610.0], "map": [7.5, 5.0]}],
+  "ground_roi_img": null,
   "H": [[0,0,0],[0,0,0],[0,0,1]],
+  "fit_error_m": {"mean": 0.0, "max": 0.0},
   "reproj_error_m": {"mean": 0.0, "max": 0.0}
 }
 ```
@@ -333,8 +346,8 @@ CV_Project/                   # 저장소 루트
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pip install -e .
 
-python tools/setup_cam.py --clip data/clips/lotA_cam1_empty --lot lotA
-python tools/build_map.py --lot lotA --cam lotA_cam1
+python tools/setup_cam.py --clip data/clips/lotA_cam3_mid        # lot·cam은 meta.json에서 읽음
+python tools/build_map.py --lot lotA --cam lotA_cam3
 python -m parking.pipeline --clip data/clips/lotA_cam1_full --config configs/default.yaml
 python tools/sample_frames.py --clip data/clips/lotA_cam1_full --every-sec 5
 python tools/label_gt.py --clip data/clips/lotA_cam1_full
