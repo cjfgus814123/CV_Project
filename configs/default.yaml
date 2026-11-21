@@ -18,7 +18,7 @@ sampling:
   fps: 2                    # 1차 기본. 3차는 10 이상
 
 geometry:
-  slot_size_m: [2.5, 5.0]   # 표준 주차칸 폭 x 길이. 실측과 다르면 수정
+  slot_size_m: [2.48, 4.9]  # lotA 실측(2026-11-21): 선 중심 간격 2.48 (내부 2.31 + 선 0.17), 길이 4.9 (1행만 4.42)
   car_size_m: [1.8, 4.7]    # 2차 footprint용 표준 차 크기
   bev_px_per_m: 20
 
