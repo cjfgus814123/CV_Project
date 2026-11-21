@@ -114,6 +114,25 @@ def _draw(frame: np.ndarray, dets: list[dict]) -> np.ndarray:
     return out
 
 
+def dedup(dets: list[dict], ios_thr: float) -> list[dict]:
+    """한 차가 두 번 검출된 경우 제거: 두 박스의 겹침 / 작은 박스 면적 >= ios_thr 이면 신뢰도 낮은 쪽을 버린다.
+
+    IoU 대신 '작은 박스 기준 겹침'을 쓰는 이유: 문 열린 차·사람 때문에 큰 박스 안에 작은 박스가 또 잡히면 IoU는 낮다.
+    """
+    keep: list[dict] = []
+    for d in sorted(dets, key=lambda d: -d["conf"]):
+        x1, y1, x2, y2 = d["bbox_img"]
+        a = (x2 - x1) * (y2 - y1)
+        for k in keep:
+            X1, Y1, X2, Y2 = k["bbox_img"]
+            inter = max(0, min(x2, X2) - max(x1, X1)) * max(0, min(y2, Y2) - max(y1, Y1))
+            if inter / max(min(a, (X2 - X1) * (Y2 - Y1)), 1e-9) >= ios_thr:
+                break
+        else:
+            keep.append(d)
+    return keep
+
+
 def load_cache(cache_path: str | Path) -> list[dict]:
     with open(cache_path, encoding="utf-8") as f:
         return [json.loads(line) for line in f if line.strip()]

@@ -5,6 +5,7 @@ model:
   imgsz: 1920               # 원본 폭 그대로. 1280 대비 먼 차 신뢰도 0.5~0.6 -> 0.8~0.9, 프레임당 약 120ms
   conf: 0.25
   classes: [2, 5, 7]        # COCO car, bus, truck
+  dedup_ios: 0.85           # 작은 박스의 이 비율 이상이 큰 박스와 겹치면 중복 검출로 보고 신뢰도 낮은 쪽 제거
 
 calibration:
   fix_k3: true             # k3 고정: 가장자리 발산 방지 (체커보드가 가장자리를 덜 덮을 때 필수)
@@ -39,3 +40,7 @@ footprint:                  # 2차
 illegal:                    # 3차
   v_stop_mps: 0.3           # 임시값
   t_stop_sec: 60            # 임시값
+
+render:
+  height: 720               # Split-View 높이(px)
+  video_fps: 4              # 결과 영상 fps (샘플링 2fps면 2배속)
