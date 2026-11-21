@@ -41,10 +41,13 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
     return out, states
 
 
-def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool) -> Path:
+def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir: Path | None = None,
+        verbose: bool = True) -> Path:
+    """out_dir: 결과 위치 (기본 outputs/<clip>). 검출 캐시는 항상 outputs/<clip>/detections.jsonl."""
     meta = load_clip_meta(clip)
-    out_dir = out_root / clip.name
-    cache = out_dir / "detections.jsonl"
+    cache = out_root / clip.name / "detections.jsonl"
+    out_dir = Path(out_dir) if out_dir else out_root / clip.name
+    out_dir.mkdir(parents=True, exist_ok=True)
     if not cache.exists():
         run_detection(clip / "video.mp4", cfg, cache, meta.get("valid_sec"))
     recs = load_cache(cache)
@@ -59,8 +62,9 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool) -> Path:
     vis = slot_visibility(slots, visible_region_map(H, region, (*(xs.min(0) - 50), *(xs.max(0) + 50))))
     uncertain = {k for k, v in vis.items() if o["vis_unknown"] <= v < o["vis_judge"]}
     n_unknown = sum(v < o["vis_unknown"] for v in vis.values())
-    print(f"칸 {len(slots)}개: 판정 {len(slots) - n_unknown - len(uncertain)}, 불확실 {len(uncertain)}, "
-          f"판단불가 {n_unknown} (커버리지 {1 - n_unknown / len(slots):.0%})")
+    if verbose:
+        print(f"칸 {len(slots)}개: 판정 {len(slots) - n_unknown - len(uncertain)}, 불확실 {len(uncertain)}, "
+              f"판단불가 {n_unknown} (커버리지 {1 - n_unknown / len(slots):.0%})")
 
     writer = None
     if video:
@@ -106,8 +110,9 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool) -> Path:
                 print(f"  {n}/{len(recs)} ({time.time() - t0:.0f}s)")
     if writer is not None:
         writer.release()
-    print(f"완료 {len(recs)}프레임, {time.time() - t0:.0f}s -> {out_dir}/occupancy.csv"
-          + (", split_view.mp4" if video else ""))
+    if verbose:
+        print(f"완료 {len(recs)}프레임, {time.time() - t0:.0f}s -> {out_dir}/occupancy.csv"
+              + (", split_view.mp4" if video else ""))
     return out_dir
 
 

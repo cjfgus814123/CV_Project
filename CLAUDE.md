@@ -64,8 +64,9 @@ data/                                   # .gitignore 대상 (영상은 공유 �
   cams/<lot>_<cam>/bev.png              # 이 cam의 기준 프레임을 lot 탑뷰 범위로 편 것 (cam 간 정렬 확인용)
   cams/<lot>_<cam>/map_overlay.png      # 맵 칸을 H^-1로 기준 프레임에 되돌려 그린 검수 그림
   clips/<clip_id>/video.mp4             # clip_id 예: lotA_cam1_empty, lotA_cam1_full
-  clips/<clip_id>/meta.json             # {"lot": "lotA", "cam": "lotA_cam1", "condition": "empty|mid|full|staged", "valid_sec": [시작, 끝]}
+  clips/<clip_id>/meta.json             # {"lot": "lotA", "cam": "lotA_cam1", "condition": "empty|mid|full|staged", "valid_sec": [시작, 끝], "split": "tune|test"}
                                         # valid_sec: 카메라가 고정된 구간 (촬영 시작·끝의 흔들림 제외)
+  clips/<clip_id>/gt_frames/            # 라벨링용 샘플 프레임 (sample_frames.py, 검출 캐시와 같은 프레임)
   clips/<clip_id>/gt_occupancy.csv      # 평가용 정답
   clips/<clip_id>/gt_events.csv         # 3차용 이벤트 정답
 outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
@@ -181,6 +182,8 @@ clip → 프레임 샘플링(기본 2fps, 3차는 10fps 이상)
 - **칸 상태 CSV**: `frame_idx,time_sec,slot_id,state` (평가에 사용).
 
 ## 6. 베이스라인 (논문 ② 방식)
+
+- 구현: 파이프라인 설정만 바꿔 같은 코드로 돌린다 (`baseline.BASELINE`: 박스 중심, 경계 허용 0, 시간 보정 없음). 영상 칸 폴리곤이 맵 칸의 H^-1 투영이므로 판정이 동일하다.
 
 - 칸 폴리곤을 **영상 좌표**로 사용한다. 공정한 비교를 위해 같은 map의 칸을 H^-1로 영상에 투영해 얻는다.
 - 판정: **박스 중심점**이 영상 위 칸 폴리곤 안에 있으면 점유.
