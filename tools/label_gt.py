@@ -5,6 +5,7 @@
 
 - 시스템 예측(검출·판정)은 보여주지 않는다 (공정한 평가).
 - 새 프레임은 직전 프레임의 라벨을 복사해서 시작 → 바뀐 칸만 클릭하면 된다.
+- 클릭한 변경은 뒤 프레임에도 이어서 적용된다 (그 칸이 같은 상태였던 프레임까지). 차가 나간 프레임에서 다시 클릭하면 된다.
 - 칸 안쪽 바닥(칸 이름 근처)을 클릭한다. 차 지붕을 클릭하면 뒤 칸이 눌릴 수 있다.
 상태: 0 빈칸(초록) / 1 점유(빨강) / 2 침범=선을 걸친 차가 있는 칸(노랑) / -1 판단불가=가려져 안 보임(회색)
 키: 클릭 다음 상태, d/→ 다음 프레임, a/← 이전, u 되돌리기, m 칸 색 켜기/끄기, s 저장, q 저장 후 종료
@@ -79,7 +80,7 @@ def main() -> None:
     cv2.resizeWindow(win, 1600, 900)
     cv2.setMouseCallback(win, on_mouse)
     k = next((i for i, f in enumerate(fidx) if f not in gt), 0)  # 첫 미라벨 프레임부터
-    undo: list[tuple[int, str, int]] = []
+    undo: list[tuple[int, str, list[tuple[int, int]]]] = []  # (현재 k, 칸, [(프레임, 이전 상태)])
     show, img_k, img = True, None, None
     while True:
         f = fidx[k]
@@ -106,7 +107,7 @@ def main() -> None:
         magnifier(out, img, state["cursor"], r=40, z=3)
         cnt = {s: sum(v == s for v in labels.values()) for s in (0, 1, 2, -1)}
         lines = [f"frame {k + 1}/{len(frames)} (idx {f})  free {cnt[0]}  occ {cnt[1]}  straddle {cnt[2]}  unknown {cnt[-1]}",
-                 "click: 0 free -> 1 occupied -> 2 straddle -> -1 unknown   (new frame copies previous labels)",
+                 "click: 0 free -> 1 occupied -> 2 straddle -> -1 unknown   (applies to this and following frames)",
                  "[d/->] next  [a/<-] prev  [u] undo  [m] colors  [s] save  [q] save+quit"]
         cv2.rectangle(out, (0, 0), (1120, 92), (0, 0, 0), -1)
         for i, t in enumerate(lines):
@@ -118,9 +119,14 @@ def main() -> None:
             pm = transform_points(np.float32([state["click"]]), H)[0]
             state["click"] = None
             sid = nearest_slot(pm, slots, 0.0)
-            if sid is not None:
-                undo.append((f, sid, labels[sid]))
-                labels[sid] = CYCLE[labels[sid]]
+            if sid is not None:  # 이 프레임부터 같은 상태가 이어지는 뒤 프레임까지 함께 바꾼다
+                old, changed = labels[sid], []
+                for g in fidx[k:]:
+                    if g not in gt or gt[g].get(sid) != old:
+                        break
+                    changed.append((g, old))
+                    gt[g][sid] = CYCLE[old]
+                undo.append((k, sid, changed))
         if key in (ord("q"), 27) or cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < 1:
             break
         elif key in (ord("d"), 65363):
@@ -128,9 +134,9 @@ def main() -> None:
         elif key in (ord("a"), 65361):
             k = max(k - 1, 0)
         elif key == ord("u") and undo:
-            uf, sid, old = undo.pop()
-            gt[uf][sid] = old
-            k = fidx.index(uf)
+            k, sid, changed = undo.pop()
+            for g, old in changed:
+                gt[g][sid] = old
         elif key == ord("m"):
             show = not show
         elif key == ord("s"):
