@@ -20,9 +20,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from parking.homography import map_polyline_to_img, transform_points
-from parking.io import load_cam, load_clip_meta, load_map
-from parking.occupancy import UNKNOWN, nearest_slot, slots_from_map
+from parking.homography import image_rect, map_polyline_to_img, transform_points, visible_region_map
+from parking.io import load_cam, load_clip_meta, load_config, load_map
+from parking.occupancy import UNKNOWN, nearest_slot, slot_visibility, slots_from_map
 from parking.render import STATE_COLOR
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -52,6 +52,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--clip", required=True)
     ap.add_argument("--data", default="data")
+    ap.add_argument("--config", default="configs/default.yaml")
     a = ap.parse_args()
 
     clip = Path(a.clip)
@@ -60,6 +61,11 @@ def main() -> None:
     H, slots = cam["H"], slots_from_map(m)
     ref = (cam["image_size"][0] / 2, cam["image_size"][1] - 1)
     slots_img = {s["id"]: map_polyline_to_img(s["polygon"], H, ref, closed=True) for s in m["slots"]}
+    # 첫 프레임 기본값: 화면에 거의 안 보이는 칸(가시 비율 < vis_unknown)은 -1, 나머지는 0
+    region = np.float64(cam["ground_roi_img"]) if cam.get("ground_roi_img") else image_rect(cam["image_size"])
+    xs = np.array([p for s in m["slots"] for p in s["polygon"]])
+    vis = slot_visibility(slots, visible_region_map(H, region, (*(xs.min(0) - 50), *(xs.max(0) + 50))))
+    init = {k: (UNKNOWN if v < load_config(a.config)["occupancy"]["vis_unknown"] else 0) for k, v in vis.items()}
     frames = sorted(clip.glob("gt_frames/f*.jpg"))
     if not frames:
         sys.exit("gt_frames가 없음: 먼저 tools/sample_frames.py 실행")
@@ -84,9 +90,9 @@ def main() -> None:
     show, img_k, img = True, None, None
     while True:
         f = fidx[k]
-        if f not in gt:  # 직전 라벨 프레임 복사, 없으면 전부 빈칸
+        if f not in gt:  # 직전 라벨 프레임 복사, 없으면 기본값
             prev = [g for g in fidx[:k] if g in gt]
-            gt[f] = dict(gt[prev[-1]]) if prev else dict.fromkeys(slots, 0)
+            gt[f] = dict(gt[prev[-1]]) if prev else dict(init)
         if img_k != k:
             img, img_k = cv2.imread(str(frames[k])), k
         labels = gt[f]
