@@ -56,10 +56,22 @@ def score(pairs: list[tuple[int, int]]) -> dict:
 
 
 def evaluate_clip(gt: dict, pred: dict, rows: dict[str, str]) -> dict:
-    """한 clip: 전체·줄별 지표 + 빈자리 수 MAE (GT 프레임 중 예측이 있는 프레임만)."""
+    """한 clip: 전체·줄별 지표 + 빈자리 수 MAE (GT 프레임 중 예측이 있는 프레임만).
+
+    침범 장면 단위: GT에 침범(2) 칸이 있는 프레임에서 예측 침범 칸이 GT 침범 칸과 하나라도 겹치면 맞음.
+    GT 침범 칸과 겹치지 않는 예측 침범이 있는 프레임은 오경보. (걸친 차의 두 칸을 다 2로 매기든
+    넘어간 칸만 2로 매기든 같은 점수가 나오도록)
+    """
     frames = [f for f in gt if f in pred]
     pairs, by_row, abs_err = [], defaultdict(list), []
+    ev = {"ev_tp": 0, "ev_fn": 0, "ev_fp": 0}
     for f in frames:
+        g2 = {s for s, v in gt[f].items() if v == 2}
+        p2 = {s for s, v in pred[f].items() if v == 2 and gt[f].get(s, -1) != -1}
+        if g2:
+            ev["ev_tp" if p2 & g2 else "ev_fn"] += 1
+        if p2 - g2 and not (p2 & g2):
+            ev["ev_fp"] += 1
         g_free = p_free = 0
         for sid, g in gt[f].items():
             p = pred[f].get(sid, -1)
@@ -69,7 +81,7 @@ def evaluate_clip(gt: dict, pred: dict, rows: dict[str, str]) -> dict:
                 g_free += g == 0
                 p_free += p == 0
         abs_err.append(abs(g_free - p_free))
-    res = score(pairs)
+    res = {**score(pairs), **ev}
     res["frames"] = len(frames)
     res["free_count_mae"] = sum(abs_err) / len(abs_err) if abs_err else float("nan")
     res["by_row"] = {r: score(v) for r, v in sorted(by_row.items())}
@@ -80,6 +92,7 @@ def evaluate(clips: list[Path], pred_name: str, split: str | None, data: Path, o
              variant_dir: str | None = None) -> dict:
     """여러 clip 합산 + clip별·조건별 지표. variant_dir가 있으면 outputs/<clip>/<variant_dir>/<pred_name>을 읽는다."""
     all_pairs, all_err, per_clip, by_cond = [], [], {}, defaultdict(list)
+    ev = {"ev_tp": 0, "ev_fn": 0, "ev_fp": 0}
     for clip in clips:
         meta = load_clip_meta(clip)
         if split and meta.get("split") != split:
@@ -92,10 +105,12 @@ def evaluate(clips: list[Path], pred_name: str, split: str | None, data: Path, o
         rows = {s["id"]: s.get("row", "?") for s in load_map(data / "lots" / meta["lot"])["slots"]}
         res, pairs, err = evaluate_clip(load_states(gt_path), load_states(pred_path), rows)
         per_clip[clip.name] = res
+        for k in ev:
+            ev[k] += res[k]
         all_pairs += pairs
         all_err += err
         by_cond[meta.get("condition", "?")] += pairs
-    total = score(all_pairs)
+    total = {**score(all_pairs), **ev}
     total["free_count_mae"] = sum(all_err) / len(all_err) if all_err else float("nan")
     total["frames"] = len(all_err)
     return {"total": total, "by_condition": {c: score(v) for c, v in by_cond.items()}, "per_clip": per_clip}
@@ -125,6 +140,7 @@ def main() -> None:
           f"점유→빈 {t['occ_free']} (치명적)  점유→점유 {t['occ_occ']}")
     print(f"  2차 침범: Precision {t['enc_precision']:.3f}  Recall {t['enc_recall']:.3f}  "
           f"(맞음 {t['enc_tp']}, 오경보 {t['enc_fp']}, 놓침 {t['enc_fn']})")
+    print(f"  2차 침범 장면 단위: 맞음 {t['ev_tp']}  놓침 {t['ev_fn']}  오경보 {t['ev_fp']}")
     for c, r in res["by_condition"].items():
         print(f"[조건 {c}] {fmt(r)}")
     for name, r in res["per_clip"].items():

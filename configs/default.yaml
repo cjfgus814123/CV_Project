@@ -37,7 +37,7 @@ occupancy:
 footprint:                  # 2차
   enabled: false            # true면 칸 판정을 차 바닥 영역 겹침으로 (false = 1차 접점 판정)
   tau_occupy: 0.15          # 차 바닥 면적 대비, 가장 많이 겹친 칸이 이 이상이면 점유 (논문 ③의 15%)
-  tau_straddle: 0.15        # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범 (튜닝 clip에서 조정)
+  tau_straddle: 0.3         # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범. 2026-11-22 tune(cam3 연출 구간): 0.3에서 오경보 장면 0
 
 illegal:                    # 3차
   v_stop_mps: 0.3           # 임시값
