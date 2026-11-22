@@ -116,6 +116,44 @@ def evaluate(clips: list[Path], pred_name: str, split: str | None, data: Path, o
     return {"total": total, "by_condition": {c: score(v) for c, v in by_cond.items()}, "per_clip": per_clip}
 
 
+def score_events(gt: list[dict], pred: list[dict]) -> dict:
+    """3차 이벤트 지표. GT aisle_parking과 시간이 겹치는 예측(같은 구역, GT zone_id가 비면 구역 무시) = 맞음.
+
+    맞은 GT마다 탐지 지연 = 예측 detect_sec - GT start_sec. 어떤 GT aisle_parking과도 안 겹치는 예측 = 오경보,
+    그중 pass_through GT와 겹치는 것은 '통과 오경보'로 따로 센다.
+    """
+    def hit(e: dict, p: dict) -> bool:
+        same_zone = not e.get("zone_id") or e["zone_id"] == p["zone_id"]
+        return same_zone and float(p["start_sec"]) <= float(e["end_sec"]) and float(p["end_sec"]) >= float(e["start_sec"])
+
+    park = [e for e in gt if e["type"] == "aisle_parking"]
+    passing = [e for e in gt if e["type"] == "pass_through"]
+    found = [next((p for p in pred if hit(e, p)), None) for e in park]
+    false = [p for p in pred if not any(hit(e, p) for e in park)]
+    delays = [float(p["detect_sec"]) - float(e["start_sec"]) for e, p in zip(park, found) if p]
+    div = lambda a, b: a / b if b else float("nan")
+    return {"gt": len(park), "pred": len(pred), "tp": len(delays),
+            "precision": div(len(pred) - len(false), len(pred)), "recall": div(len(delays), len(park)),
+            "false_alarms": len(false), "pass_false_alarms": sum(any(hit(e, p) for e in passing) for p in false),
+            "delay_mean_sec": div(sum(delays), len(delays))}
+
+
+def evaluate_events(clips: list[Path], split: str | None, out_root: Path, pred_name: str = "events.csv") -> dict:
+    """clip별 gt_events.csv vs outputs/<clip>/events.csv 합산."""
+    gt, pred = [], []
+    for clip in clips:
+        if split and load_clip_meta(clip).get("split") != split:
+            continue
+        g, p = clip / "gt_events.csv", out_root / clip.name / pred_name
+        if not g.exists() or not p.exists():
+            print(f"건너뜀 {clip.name}: {'gt_events.csv' if not g.exists() else '예측 events.csv'} 없음")
+            continue
+        tag = lambda rows: [{**r, "zone_id": f"{clip.name}/{r['zone_id']}" if r.get("zone_id") else ""} for r in rows]
+        gt += tag(csv.DictReader(g.open()))
+        pred += tag(csv.DictReader(p.open()))
+    return score_events(gt, pred)
+
+
 def fmt(r: dict) -> str:
     return (f"n={r['n']:5d}  빈칸P {r['free_precision']:.3f}  빈칸R {r['free_recall']:.3f}  빈칸F1 {r['free_f1']:.3f}  "
             f"점유R {r['occ_recall']:.3f}  Acc {r['accuracy']:.3f}")
@@ -129,7 +167,15 @@ def main() -> None:
     ap.add_argument("--data", default="data")
     ap.add_argument("--out", default="outputs")
     ap.add_argument("--json", default=None, help="결과를 JSON으로 저장할 경로")
+    ap.add_argument("--events", action="store_true", help="3차 불법주차 이벤트 평가 (gt_events.csv vs events.csv)")
     a = ap.parse_args()
+
+    if a.events:
+        e = evaluate_events([Path(c) for c in a.clips], a.split, Path(a.out))
+        print(f"[3차 이벤트] GT {e['gt']}  예측 {e['pred']}  맞음 {e['tp']}  Precision {e['precision']:.3f}  "
+              f"Recall {e['recall']:.3f}  오경보 {e['false_alarms']} (통과 차 {e['pass_false_alarms']})  "
+              f"탐지 지연 평균 {e['delay_mean_sec']:.1f}s")
+        return
 
     res = evaluate([Path(c) for c in a.clips], a.pred, a.split, Path(a.data), Path(a.out))
     t = res["total"]

@@ -39,9 +39,18 @@ footprint:                  # 2차
   tau_occupy: 0.15          # 차 바닥 면적 대비, 가장 많이 겹친 칸이 이 이상이면 점유 (논문 ③의 15%)
   tau_straddle: 0.3         # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범. 2026-11-22 tune(cam3 연출 구간): 0.3에서 오경보 장면 0
 
+track:                      # 3차 ByteTrack (Ultralytics). 검출 캐시(2fps)에 붙임
+  high_thresh: 0.25
+  low_thresh: 0.1
+  new_track_thresh: 0.25
+  buffer_frames: 20         # 놓친 트랙 유지 프레임 (2fps면 10초)
+  match_thresh: 0.8
+
 illegal:                    # 3차
-  v_stop_mps: 0.3           # 임시값
-  t_stop_sec: 60            # 임시값
+  enabled: true             # 맵에 aisles/no_parking이 있을 때만 동작
+  v_stop_mps: 0.3           # 임시값: 최근 window_sec 평균 속도가 이 미만이면 정지
+  t_stop_sec: 60            # 임시값: 구역 안 정지가 이만큼 이어지면 불법주차
+  window_sec: 5             # 속도 계산 창 (접점 흔들림 0.1~0.3m를 평균으로 눌러줌)
 
 render:
   height: 720               # Split-View 높이(px)

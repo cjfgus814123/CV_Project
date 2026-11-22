@@ -108,7 +108,7 @@ outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
 ### 5.2 영상 처리 단계 (clip마다)
 
 ```
-clip → 프레임 샘플링(기본 2fps, 3차는 10fps 이상)
+clip → 프레임 샘플링(기본 2fps, 3차도 같은 캐시 사용 — 5.5 3차 구현 참고)
      → [원본 프레임] undistort(선택) → YOLO-seg 검출 (car, bus, truck)
      → (3차) ByteTrack 추적
      → 지면 접점 추출 → H로 맵 좌표 변환
@@ -180,6 +180,15 @@ clip → 프레임 샘플링(기본 2fps, 3차는 10fps 이상)
 - ByteTrack ID별 맵 좌표 궤적을 유지.
 - 통로·금지구역 폴리곤 안에서 이동 속도가 v_stop(m/s) 미만인 상태가 T_stop(초) 이상 지속되면 불법주차 이벤트.
 - 지나가는 차, 주차하려고 잠깐 멈춘 차는 이벤트가 아니어야 한다.
+- 구현 (2026-11-22, `track.py`, `illegal.py`, `illegal.enabled`, 맵에 aisles/no_parking이 있을 때만):
+  - 추적은 Ultralytics BYTETracker를 **기존 2fps 검출 캐시**에 붙인다 (10fps 재검출 = cam3 하나에 약 45분).
+    찾는 대상이 60초 이상 서 있는 차라 2fps로 충분하다. 지나가는 차는 ID가 바뀔 수 있지만 정지 판정에는 영향이 적다.
+  - 속도 = 최근 `window_sec`(5초) 동안 이동 거리 / 시간 (접점이 프레임마다 0.1~0.3m 흔들려 한 프레임 차이로는 못 씀).
+  - 통로 폴리곤은 `map_builder.aisle_between`으로 마주 보는 두 칸 줄 사이에 자동 생성 (lotA: AISLE1 = A~B, AISLE2 = C~D).
+  - 출력 `outputs/<clip>/events.csv`: `event_id,clip_id,type,zone_id,start_sec,end_sec,detect_sec,track_id`.
+    평가: `python eval/evaluate.py --clips ... --events` (GT와 시간이 겹치면 맞음, 탐지 지연 = detect_sec - GT start).
+  - 현재 데이터에는 통로 장기 정차가 없어 이벤트 0개 (기준 10초로 낮추면 cam3 582~617s AISLE2 정차 1건).
+    평가하려면 통로 1분 이상 정차 + 통과 장면을 연출해 찍고 gt_events.csv를 만든다.
 
 **판단불가 (-1)**
 - 영상 네 모서리를 H로 투영한 다각형 = 맵 위 **가시 영역**.
@@ -374,6 +383,7 @@ python -m parking.pipeline --clip data/clips/lotA_cam1_full --config configs/def
 python tools/sample_frames.py --clip data/clips/lotA_cam1_full --every-sec 5
 python tools/label_gt.py --clip data/clips/lotA_cam1_full
 python eval/evaluate.py --clips data/clips/lotA_* --split test
+python eval/evaluate.py --clips data/clips/lotA_* --events       # 3차 이벤트
 python eval/compare.py --clips data/clips/lotA_* --split test
 pytest -q
 ```

@@ -16,15 +16,18 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from shapely.geometry import Polygon
 
 from parking.contact import away_dir_map, contact_map, contact_point_img
 from parking.detect import dedup, load_cache, run_detection
 from parking.footprint import footprint_from_det, footprint_states, slot_overlaps
 from parking.homography import image_rect, map_polyline_to_img, map_to_bev_matrix, transform_points, visible_region_map
+from parking.illegal import StopDetector
 from parking.io import load_cam, load_clip_meta, load_config, load_map
 from parking.occupancy import (OCCUPIED, UNKNOWN, FREE, apply_visibility, nearest_slot, slot_visibility,
                                slots_from_map, temporal_smooth)
 from parking.render import draw_frame_view, draw_map_view, split_view
+from parking.track import Tracker
 
 
 def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
@@ -80,6 +83,11 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
         print(f"칸 {len(slots)}개: 판정 {len(slots) - n_unknown - len(uncertain)}, 불확실 {len(uncertain)}, "
               f"판단불가 {n_unknown} (커버리지 {1 - n_unknown / len(slots):.0%})")
 
+    zones = {z["id"]: Polygon(z["polygon"]) for z in m.get("aisles", []) + m.get("no_parking", [])}
+    ic = cfg["illegal"]
+    tracker = Tracker(cfg, image_size) if ic["enabled"] and zones else None
+    stops = StopDetector(zones, ic["v_stop_mps"], ic["t_stop_sec"], ic["window_sec"]) if tracker else None
+
     writer = None
     if video:
         bev = cv2.imread(str(data / "lots" / meta["lot"] / m["bev_image"]))
@@ -87,6 +95,7 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
         ref = (image_size[0] / 2, image_size[1] - 1)
         slots_img = {s["id"]: map_polyline_to_img(s["polygon"], H, ref, closed=True) for s in m["slots"]}
         slots_bev = {s["id"]: [transform_points(np.float32(s["polygon"]), M)] for s in m["slots"]}
+        zones_bev = [transform_points(np.float32(z.exterior.coords[:-1]), M) for z in zones.values()]
         cap, i_read = cv2.VideoCapture(str(clip / "video.mp4")), -1
 
     history, t0 = [], time.time()
@@ -97,6 +106,13 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
         for n, rec in enumerate(recs):
             dets, raw = process_frame(rec["dets"], H, slots, cfg, image_size)
             raw = apply_visibility(raw, vis, o["vis_unknown"])
+            if tracker:  # 3차: 추적 + 구역 안 정지 시간
+                for d, tid in zip(dets, tracker.update(dets)):
+                    d["track_id"] = tid
+                now = stops.update(rec["time_sec"], [(d["track_id"], d["contact_map"]) for d in dets
+                                                     if d["track_id"] is not None])
+                for d in dets:
+                    d["illegal"] = d["track_id"] in now
             history.append(raw)
             states = temporal_smooth(history, o["smooth_n"])
             for sid in slots:
@@ -111,11 +127,13 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
             judged = [s for s in slots if states[s] != UNKNOWN]
             n_free = sum(states[s] == FREE for s in judged)
             header = (f"{clip.name}  t={rec['time_sec']:6.1f}s  free {n_free} / {len(judged)}  "
-                      f"(unknown {len(slots) - len(judged)})  cars {len(dets)}")
+                      f"(unknown {len(slots) - len(judged)})  cars {len(dets)}"
+                      + (f"  illegal {sum(d.get('illegal', False) for d in dets)}" if tracker else ""))
             contacts_bev = transform_points(np.float32([d["contact_map"] for d in dets]).reshape(-1, 2), M) if dets else []
             fps_bev = [transform_points(d["footprint_map"], M) for d in dets if "footprint_map" in d]
             img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain),
-                             draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev), header,
+                             draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev, zones_bev,
+                                           [bool(d.get("illegal")) for d in dets]), header,
                              cfg["render"]["height"])
             if writer is None:
                 writer = cv2.VideoWriter(str(out_dir / "split_view.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),
@@ -125,6 +143,16 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
                 print(f"  {n}/{len(recs)} ({time.time() - t0:.0f}s)")
     if writer is not None:
         writer.release()
+    if stops:
+        events = stops.finish()
+        with open(out_dir / "events.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["event_id", "clip_id", "type", "zone_id", "start_sec", "end_sec", "detect_sec", "track_id"])
+            for e in events:
+                w.writerow([e["event_id"], clip.name, "aisle_parking", e["zone_id"], e["start_sec"], e["end_sec"],
+                            e["detect_sec"], e["track_id"]])
+        if verbose:
+            print(f"불법주차 이벤트 {len(events)}개 -> {out_dir}/events.csv")
     if verbose:
         print(f"완료 {len(recs)}프레임, {time.time() - t0:.0f}s -> {out_dir}/occupancy.csv"
               + (", split_view.mp4" if video else ""))
