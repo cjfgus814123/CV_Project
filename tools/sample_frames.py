@@ -1,6 +1,7 @@
 """GT 라벨링용 프레임 샘플링 (CLAUDE.md 7).
 
     python tools/sample_frames.py --clip data/clips/lotA_cam3_mid --every-sec 10
+    python tools/sample_frames.py --clip data/clips/lotA_cam3_mid --every-sec 2 --start 455 --end 705 --max 200  # 연출 구간만 촘촘히
 
 검출 캐시(outputs/<clip>/detections.jsonl)에 있는 프레임 중에서 every-sec 간격으로 골라
 data/clips/<clip>/gt_frames/f<frame_idx>.jpg로 저장한다 (예측과 같은 프레임이어야 비교 가능).
@@ -35,11 +36,14 @@ def main() -> None:
     ap.add_argument("--clip", required=True)
     ap.add_argument("--every-sec", type=float, default=5.0)
     ap.add_argument("--max", type=int, default=100, help="최대 프레임 수 (넘으면 간격을 자동으로 넓힘)")
+    ap.add_argument("--start", type=float, default=None, help="이 시각(초) 이후만")
+    ap.add_argument("--end", type=float, default=None, help="이 시각(초) 이전만")
     ap.add_argument("--out", default="outputs")
     a = ap.parse_args()
 
     clip = Path(a.clip)
-    recs = load_cache(Path(a.out) / clip.name / "detections.jsonl")
+    recs = [r for r in load_cache(Path(a.out) / clip.name / "detections.jsonl")
+            if (a.start is None or r["time_sec"] >= a.start) and (a.end is None or r["time_sec"] <= a.end)]
     idx = [recs[k]["frame_idx"] for k in pick([r["time_sec"] for r in recs], a.every_sec, a.max)]
     out = clip / "gt_frames"
     out.mkdir(exist_ok=True)
