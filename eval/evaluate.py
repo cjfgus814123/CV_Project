@@ -32,18 +32,23 @@ def score(pairs: list[tuple[int, int]]) -> dict:
     """(gt, pred) 쌍 목록 -> 지표. 둘 다 -1이 아닌 쌍만 혼동행렬에 들어간다."""
     cm = {"free_free": 0, "free_occ": 0, "occ_free": 0, "occ_occ": 0}  # gt_pred
     n_unknown = 0
+    enc = {"enc_tp": 0, "enc_fp": 0, "enc_fn": 0}  # 2차: 침범(2) 칸 단위
     for g, p in pairs:
         if g == -1:
             continue
         if p == -1:
             n_unknown += 1
             continue
+        if g == 2 or p == 2:
+            enc["enc_tp" if g == p else ("enc_fp" if p == 2 else "enc_fn")] += 1
         cm[f"{'occ' if _occ(g) else 'free'}_{'occ' if _occ(p) else 'free'}"] += 1
     tp_f, fp_f, fn_f, tp_o = cm["free_free"], cm["occ_free"], cm["free_occ"], cm["occ_occ"]
     div = lambda a, b: a / b if b else float("nan")
     prec_f, rec_f = div(tp_f, tp_f + fp_f), div(tp_f, tp_f + fn_f)
     n = sum(cm.values())
-    return {"n": n, **cm, "pred_unknown": n_unknown,
+    return {"n": n, **cm, **enc, "pred_unknown": n_unknown,
+            "enc_precision": div(enc["enc_tp"], enc["enc_tp"] + enc["enc_fp"]),
+            "enc_recall": div(enc["enc_tp"], enc["enc_tp"] + enc["enc_fn"]),
             "free_precision": prec_f, "free_recall": rec_f,
             "free_f1": div(2 * prec_f * rec_f, prec_f + rec_f),
             "occ_precision": div(tp_o, tp_o + fn_f), "occ_recall": div(tp_o, tp_o + fp_f),
@@ -118,6 +123,8 @@ def main() -> None:
     print(f"[전체] {t['frames']}프레임  {fmt(t)}  빈자리수 MAE {t['free_count_mae']:.2f}  (예측 판단불가 {t['pred_unknown']})")
     print(f"  혼동행렬 (GT→예측): 빈→빈 {t['free_free']}  빈→점유 {t['free_occ']}  "
           f"점유→빈 {t['occ_free']} (치명적)  점유→점유 {t['occ_occ']}")
+    print(f"  2차 침범: Precision {t['enc_precision']:.3f}  Recall {t['enc_recall']:.3f}  "
+          f"(맞음 {t['enc_tp']}, 오경보 {t['enc_fp']}, 놓침 {t['enc_fn']})")
     for c, r in res["by_condition"].items():
         print(f"[조건 {c}] {fmt(r)}")
     for name, r in res["per_clip"].items():

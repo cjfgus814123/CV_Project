@@ -50,9 +50,11 @@ def draw_frame_view(frame_img: np.ndarray, dets: list[dict], slots_img: dict, st
 
 
 def draw_map_view(bev_img: np.ndarray, slots_bev: dict, states: dict[str, int], contacts_bev: np.ndarray,
-                  uncertain: set[str] = frozenset()) -> np.ndarray:
-    """오른쪽: map_bev 위 칸 상태 색칠 + 접점."""
+                  uncertain: set[str] = frozenset(), footprints_bev: list | None = None) -> np.ndarray:
+    """오른쪽: map_bev 위 칸 상태 색칠 + (2차) 차 바닥 사각형 + 접점."""
     out = _fill(bev_img, slots_bev, states, uncertain, 0.45, 1, 0.38)
+    for fp in footprints_bev or []:
+        cv2.polylines(out, [np.int32(fp).reshape(-1, 1, 2)], True, (255, 255, 255), 1, cv2.LINE_AA)
     for p in np.asarray(contacts_bev).reshape(-1, 2):
         cv2.circle(out, tuple(np.int32(p)), 4, (0, 255, 255), -1)
     return out

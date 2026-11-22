@@ -63,9 +63,16 @@ def contact_map(pt_img: np.ndarray, H: np.ndarray, depth_offset_m: float) -> np.
     표준 차 폭의 절반(0.9m)만큼 밀면 차가 어느 방향으로 서 있든 바닥 영역 안쪽에 들어간다.
     영상에서 위쪽 = 바닥에서 카메라 반대 방향이므로, 몇 px 위 점을 함께 투영해 방향을 구한다.
     """
+    a, d = _map_and_away(pt_img, H)
+    return a if depth_offset_m == 0 else (a + d * depth_offset_m).astype(np.float32)
+
+
+def away_dir_map(pt_img: np.ndarray, H: np.ndarray) -> np.ndarray:
+    """영상 점 위치에서 카메라 반대 방향 (맵 좌표, 단위 벡터)."""
+    return _map_and_away(pt_img, H)[1]
+
+
+def _map_and_away(pt_img: np.ndarray, H: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     p = np.asarray(pt_img, np.float32).reshape(2)
     a, b = transform_points(np.stack([p, p - [0, 5]]).astype(np.float32), H)
-    if depth_offset_m == 0:
-        return a
-    v = b - a
-    return (a + v / np.linalg.norm(v) * depth_offset_m).astype(np.float32)
+    return a, (b - a) / np.linalg.norm(b - a)

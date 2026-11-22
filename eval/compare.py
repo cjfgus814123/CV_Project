@@ -25,6 +25,8 @@ VARIANTS = {
     "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_n": 1}}),
     "proposed_offset_0": ("제안, 깊이 오프셋 없음 (원래 설계)", {"contact": {"depth_offset_m": 0.0}}),
     "bbox_bottom": ("접점 = 박스 아래변 중앙", {"contact": {"mode": "bbox_bottom_center"}}),
+    "footprint": ("2차: 차 바닥 영역(표준 차 크기) + 차 면적 대비 겹침 15%", {"footprint": {"enabled": True}}),
+    "footprint_tau0.3": ("2차, 겹침 기준 30%", {"footprint": {"enabled": True, "tau_straddle": 0.3}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
     "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),
 }
@@ -53,14 +55,16 @@ def main() -> None:
         rows.append((name, desc, t))
         print(f"{name:22s} 빈칸P {t['free_precision']:.3f}  빈칸R {t['free_recall']:.3f}  "
               f"점유R {t['occ_recall']:.3f}  Acc {t['accuracy']:.3f}  MAE {t['free_count_mae']:.2f}  "
-              f"점유→빈(치명) {t['occ_free']}")
+              f"점유→빈(치명) {t['occ_free']}  침범 P {t['enc_precision']:.2f} R {t['enc_recall']:.2f} "
+              f"(맞음 {t['enc_tp']} 오경보 {t['enc_fp']} 놓침 {t['enc_fn']})")
 
     md = [f"# 방식 비교 (split={a.split or 'all'}, clips: {', '.join(c.name for c in clips)})", "",
           f"GT {rows[0][2]['frames']}프레임, 칸 판정 {rows[0][2]['n']}건. 설정: {a.config}", "",
-          "| 방식 | 설명 | 빈칸 Precision | 빈칸 Recall | 빈칸 F1 | 점유 Recall | Accuracy | 빈자리 수 MAE | 점유→빈칸 (치명) |",
-          "|---|---|---|---|---|---|---|---|---|"]
+          "| 방식 | 설명 | 빈칸 Precision | 빈칸 Recall | 빈칸 F1 | 점유 Recall | Accuracy | 빈자리 수 MAE | 점유→빈칸 (치명) | 침범 Precision | 침범 Recall | 침범 맞음/오경보/놓침 |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     md += [f"| {n} | {d} | {t['free_precision']:.3f} | {t['free_recall']:.3f} | {t['free_f1']:.3f} | "
-           f"{t['occ_recall']:.3f} | {t['accuracy']:.3f} | {t['free_count_mae']:.2f} | {t['occ_free']} |" for n, d, t in rows]
+           f"{t['occ_recall']:.3f} | {t['accuracy']:.3f} | {t['free_count_mae']:.2f} | {t['occ_free']} | "
+           f"{t['enc_precision']:.3f} | {t['enc_recall']:.3f} | {t['enc_tp']}/{t['enc_fp']}/{t['enc_fn']} |" for n, d, t in rows]
     path = out_root / f"compare_{a.split or 'all'}.md"
     path.write_text("\n".join(md) + "\n", encoding="utf-8")
     print(f"-> {path}")

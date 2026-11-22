@@ -17,8 +17,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from parking.contact import contact_map, contact_point_img
+from parking.contact import away_dir_map, contact_map, contact_point_img
 from parking.detect import dedup, load_cache, run_detection
+from parking.footprint import footprint_from_det, footprint_states, slot_overlaps
 from parking.homography import image_rect, map_polyline_to_img, map_to_bev_matrix, transform_points, visible_region_map
 from parking.io import load_cam, load_clip_meta, load_config, load_map
 from parking.occupancy import (OCCUPIED, UNKNOWN, FREE, apply_visibility, nearest_slot, slot_visibility,
@@ -28,16 +29,29 @@ from parking.render import draw_frame_view, draw_map_view, split_view
 
 def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
                   image_size: tuple[int, int]) -> tuple[list[dict], dict[str, int]]:
-    """검출 1프레임 -> (접점·배정 칸이 붙은 검출 목록, 칸 상태 {id: 0/1}). 가시성·시간 보정 전."""
-    c, o = cfg["contact"], cfg["occupancy"]
-    out, states = [], dict.fromkeys(slots, FREE)
+    """검출 1프레임 -> (접점·배정 칸이 붙은 검출 목록, 칸 상태 {id: 0/1/2}). 가시성·시간 보정 전.
+
+    footprint.enabled면 차 바닥 영역 겹침으로 판정 (2차), 아니면 접점이 든 칸 (1차).
+    """
+    c, o, fcfg = cfg["contact"], cfg["occupancy"], cfg["footprint"]
+    out, states, overlaps = [], dict.fromkeys(slots, FREE), []
     for d in dedup(dets, cfg["model"]["dedup_ios"]):
         pt_img, trunc = contact_point_img(d["mask_polys_img"], d["bbox_img"], c["mode"], image_size, c["edge_margin_px"])
         pt_map = contact_map(pt_img, H, c["depth_offset_m"])
         sid = nearest_slot(pt_map, slots, o["boundary_tol_m"])
-        if sid is not None:
-            states[sid] = OCCUPIED
-        out.append({**d, "contact_img": pt_img, "contact_map": pt_map, "slot": sid, "truncated": trunc})
+        det = {**d, "contact_img": pt_img, "contact_map": pt_map, "slot": sid, "truncated": trunc}
+        if fcfg["enabled"] and d["mask_polys_img"]:
+            orient = slots[nearest_slot(pt_map, slots, float("inf"))]  # 차 방향 = 가장 가까운 칸 방향
+            fp = footprint_from_det(d["mask_polys_img"], H, away_dir_map(pt_img, H), orient, cfg["geometry"]["car_size_m"])
+            det["footprint_map"] = np.float32(fp.exterior.coords[:4])
+            overlaps.append(slot_overlaps(fp, slots))
+        elif sid is not None:
+            overlaps.append({sid: 1.0})
+        out.append(det)
+    if fcfg["enabled"]:
+        return out, footprint_states(overlaps, slots, fcfg["tau_occupy"], fcfg["tau_straddle"])
+    for ov in overlaps:
+        states.update(dict.fromkeys(ov, OCCUPIED))
     return out, states
 
 
@@ -99,8 +113,9 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
             header = (f"{clip.name}  t={rec['time_sec']:6.1f}s  free {n_free} / {len(judged)}  "
                       f"(unknown {len(slots) - len(judged)})  cars {len(dets)}")
             contacts_bev = transform_points(np.float32([d["contact_map"] for d in dets]).reshape(-1, 2), M) if dets else []
+            fps_bev = [transform_points(d["footprint_map"], M) for d in dets if "footprint_map" in d]
             img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain),
-                             draw_map_view(bev, slots_bev, states, contacts_bev, uncertain), header,
+                             draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev), header,
                              cfg["render"]["height"])
             if writer is None:
                 writer = cv2.VideoWriter(str(out_dir / "split_view.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),
