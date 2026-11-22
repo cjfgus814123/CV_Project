@@ -62,7 +62,8 @@ data/                                   # .gitignore 대상 (영상은 공유 �
   cams/<lot>_<cam>/points.json          # setup_cam 클릭 진행 상황 (자동 저장, 이어서 하기용)
   cams/<lot>_<cam>/ref_frame.png        # H 계산에 쓴 기준 프레임 (빈 상태)
   cams/<lot>_<cam>/bev.png              # 이 cam의 기준 프레임을 lot 탑뷰 범위로 편 것 (cam 간 정렬 확인용)
-  cams/<lot>_<cam>/map_overlay.png      # 맵 칸을 H^-1로 기준 프레임에 되돌려 그린 검수 그림
+  cams/<lot>_<cam>/map_overlay.png      # 맵 칸을 H^-1로 기준 프레임에 되돌려 그린 검수 그림 (setup_cam·build_map 저장 시)
+  cams/<lot>_<cam>/points.png           # 찍은 점 번호 + 좌표 목록 (다음 cam을 찍는 팀원용 안내 그림)
   clips/<clip_id>/video.mp4             # clip_id 예: lotA_cam1_empty, lotA_cam1_full
   clips/<clip_id>/meta.json             # {"lot": "lotA", "cam": "lotA_cam1", "condition": "empty|mid|full|staged", "valid_sec": [시작, 끝], "split": "tune|test"}
                                         # valid_sec: 카메라가 고정된 구간 (촬영 시작·끝의 흔들림 제외)

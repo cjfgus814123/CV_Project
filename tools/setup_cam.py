@@ -17,6 +17,12 @@
      (칸 길이 5.0m, 직각주차 통로 폭 6.0m(주차장법), 칸 폭 2.5m). 화면 양 끝에 넓게 퍼뜨릴수록 좋다.
   3) 넣지 않은 선 끝 2~4개를 v 모드로 검증점으로.
 lot의 첫 cam이면 lots/<lot>/map.json 뼈대와 map_bev.png도 만든다 (이후 cam은 같은 맵 좌표계를 쓴다).
+
+같은 lot의 두 번째 cam부터 (팀원용):
+  - 첫 4점은 다른 cam의 cams/<cam>/points.png (찍은 점과 좌표가 적힌 그림)에서 같은 모서리를 찾아 입력한다.
+  - 4점 이상이면 다른 cam들이 쓴 좌표가 화면에 하늘색 +로 나온다 (추천점). 그 근처를 클릭하면
+    터미널에 추천 좌표가 나오고, Enter만 누르면 그 좌표로 들어간다 (x = 취소, 직접 입력도 가능).
+저장하면 points.png (찍은 점 확인)와, 맵에 칸이 있으면 map_overlay.png (맵 칸을 원본에 되돌려 그림)도 만든다.
 """
 from __future__ import annotations
 
@@ -63,10 +69,40 @@ def fit(pts: dict, cfg: dict):
     return H, res, val
 
 
-def draw(frame, pts, H, mode, show_grid, cursor, res):
+def reference_points(data: Path, lot: str, cam: str) -> np.ndarray:
+    """같은 lot의 다른 cam들이 H.json에 쓴 맵 좌표 (중복 제거), (K,2). 팀원이 같은 좌표계로 점을 찍게 돕는다."""
+    out = []
+    for f in sorted((data / "cams").glob("*/H.json")):
+        h = json.loads(f.read_text(encoding="utf-8"))
+        if h.get("lot_id") == lot and h.get("cam_id") != cam:
+            out += [tuple(round(v, 3) for v in p["map"]) for p in h["correspondences"] + h["validation"]]
+    return np.array(sorted(set(out)), np.float64).reshape(-1, 2)
+
+
+def suggest(xy_img, H, refs: np.ndarray, max_m: float = 1.0):
+    """클릭 위치를 지금 H로 맵에 옮겨 가장 가까운 추천 좌표 (max_m 안에 없으면 None)."""
+    if H is None or not len(refs):
+        return None
+    pm = transform_points(np.float32([xy_img]), H)[0]
+    d = np.linalg.norm(refs - pm, axis=1)
+    return refs[d.argmin()] if d.min() <= max_m else None
+
+
+def draw(frame, pts, H, mode, show_grid, cursor, res, refs=None):
     out = frame.copy()
     h, w = frame.shape[:2]
     ref = (w / 2, h - 1)
+    if H is not None and refs is not None:  # 추천점: 다른 cam이 쓴 좌표가 이 화면에서 있어야 할 자리
+        used = {tuple(p["map"]) for p in pts["corr"] + pts["val"]}
+        for X, Y in refs:
+            if (X, Y) in used:
+                continue
+            q = map_polyline_to_img([[X, Y], [X, Y]], H, ref)
+            if q and 0 <= q[0][0][0] < w and 0 <= q[0][0][1] < h:
+                u = tuple(np.int32(q[0][0]))
+                cv2.drawMarker(out, u, (255, 255, 0), cv2.MARKER_CROSS, 14, 2)
+                cv2.putText(out, f"{X:g},{Y:g}", (u[0] + 6, u[1] + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                            (255, 255, 0), 1, cv2.LINE_AA)
     if H is not None and show_grid:
         allm = np.array([p["map"] for p in pts["corr"] + pts["val"]])
         (x0, y0), (x1, y1) = np.floor(allm.min(0)) - 10, np.ceil(allm.max(0)) + 10
@@ -95,12 +131,31 @@ def draw(frame, pts, H, mode, show_grid, cursor, res):
         cm = transform_points(np.float32([cursor]), H)[0]
         cur = f"  cursor=({cm[0]:.2f},{cm[1]:.2f})m"
     lines = [f"mode={mode} (v: corr/val, r: roi)  corr={len(pts['corr'])} val={len(pts['val'])} roi={len(pts['roi'])}{cur}",
-             "click: add point -> type 'x y' in terminal   [g] grid  [u] undo  [s] save  [q] quit",
+             "click: add point -> type 'x y' in terminal (Enter = suggested +)   [g] grid  [u] undo  [s] save  [q] quit",
              "red line = click -> where H puts its map coord (short = good)"]
     cv2.rectangle(out, (0, 0), (1250, 92), (0, 0, 0), -1)
     for i, t in enumerate(lines):
         cv2.putText(out, t, (10, 26 + 28 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 1, cv2.LINE_AA)
     return out
+
+
+def points_sheet(frame: np.ndarray, pts: dict, res) -> np.ndarray:
+    """팀원용 안내 그림: 찍은 점에 번호, 오른쪽에 번호별 맵 좌표 목록 (초록 = 대응점, 주황 = 검증점)."""
+    out = frame.copy()
+    items = [("corr", p) for p in pts["corr"]] + [("val", p) for p in pts["val"]]
+    for i, (k, p) in enumerate(items, 1):
+        u = tuple(np.int32(p["img"]))
+        cv2.circle(out, u, 7, COL[k], -1)
+        cv2.circle(out, u, 7, (0, 0, 0), 1)
+        for col, th in (((0, 0, 0), 5), (COL[k], 2)):
+            cv2.putText(out, str(i), (u[0] + 9, u[1] - 9), cv2.FONT_HERSHEY_SIMPLEX, 0.9, col, th, cv2.LINE_AA)
+    panel = np.zeros((out.shape[0], 330, 3), np.uint8)
+    cv2.putText(panel, "no.  map x, y (m)", (12, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1, cv2.LINE_AA)
+    for i, (k, p) in enumerate(items, 1):
+        err = f"  e={res[i - 1]:.2f}" if k == "corr" and res is not None else "  (val)"
+        cv2.putText(panel, f"{i:2d}   {p['map'][0]:g}, {p['map'][1]:g}{err}", (12, 34 + 30 * i),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.62, COL[k], 1, cv2.LINE_AA)
+    return np.hstack([out, panel])
 
 
 def save_all(a, cfg, meta, frame, frame_idx, pts, fitted, cam_dir: Path, lot_dir: Path):
@@ -137,8 +192,24 @@ def save_all(a, cfg, meta, frame, frame_idx, pts, fitted, cam_dir: Path, lot_dir
         save_map(lot_dir, m)
         shutil.copy(cam_dir / "bev.png", lot_dir / "map_bev.png")
         print(f"lot 맵 뼈대 생성: {map_path}, {lot_dir / 'map_bev.png'} ({size[0]}x{size[1]}px)")
-    print(f"저장: {cam_dir}/H.json, ref_frame.png, bev.png | 대응점 오차 평균 {res.mean():.3f}m 최대 {res.max():.3f}m"
-          + (f" | 검증 평균 {val['mean']:.3f}m 최대 {val['max']:.3f}m" if val else ""))
+    cv2.imwrite(str(cam_dir / "points.png"), points_sheet(frame, pts, res))
+    if m["slots"]:  # 맵 칸을 이 cam의 원본에 되돌려 그림 -> 실제 주차선과 맞는지 확인
+        ov, ref = frame.copy(), (w / 2, h - 1)
+        for s in m["slots"]:
+            pieces = map_polyline_to_img(s["polygon"], H, ref, closed=True)
+            for p in pieces:
+                cv2.polylines(ov, [np.int32(p)], True, (0, 255, 0), 2, cv2.LINE_AA)
+            if pieces:
+                c = np.concatenate(pieces).mean(0)
+                cv2.putText(ov, s["id"], (int(c[0]) - 15, int(c[1]) + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.55,
+                            (0, 255, 255), 2, cv2.LINE_AA)
+        cv2.imwrite(str(cam_dir / "map_overlay.png"), ov)
+    ok = val is not None and val["max"] <= 0.15
+    print(f"저장: {cam_dir}/H.json, ref_frame.png, bev.png, points.png"
+          + (", map_overlay.png" if m["slots"] else "")
+          + f" | 대응점 오차 평균 {res.mean():.3f}m 최대 {res.max():.3f}m"
+          + (f" | 검증 평균 {val['mean']:.3f}m 최대 {val['max']:.3f}m" if val else "")
+          + (" -> 좋음" if ok else " -> 검증 최대 오차가 0.15m를 넘거나 검증점이 없음: 점을 더 넓게 찍거나 틀린 점을 u로 지우기"))
 
 
 def main() -> None:
@@ -165,6 +236,9 @@ def main() -> None:
         print(f"주의: points.json은 프레임 {pts['frame_idx']} 기준 (지금 {frame_idx}). 카메라가 고정이면 괜찮음")
     pts["frame_idx"] = frame_idx
     print(f"{meta['cam']}: 프레임 {frame_idx} ({sec:.1f}s), 이어서 시작: {len(pts['corr'])}+{len(pts['val'])}점")
+    refs = reference_points(Path(a.data), meta["lot"], meta["cam"])
+    if len(refs):
+        print(f"추천점 {len(refs)}개 (같은 lot의 다른 cam 좌표). 첫 4점은 그 cam의 points.png를 보고 입력")
 
     state = {"click": None, "cursor": None}
 
@@ -182,14 +256,18 @@ def main() -> None:
     fitted = fit(pts, cfg)
     while True:
         H, res = (fitted[0], fitted[1]) if fitted else (None, None)
-        cv2.imshow(win, draw(frame, pts, H, mode, show_grid, state["cursor"], res))
+        cv2.imshow(win, draw(frame, pts, H, mode, show_grid, state["cursor"], res, refs))
         key = cv2.waitKey(30) & 0xFF
         if state["click"] is not None:
             xy, state["click"] = [float(v) for v in state["click"]], None
             if mode == "roi":
                 pts["roi"].append(xy)
             else:
-                s = input(f"[{mode}] 클릭 ({xy[0]:.0f},{xy[1]:.0f})의 맵 좌표 'x y' (빈 줄 = 취소): ").strip()
+                sg = suggest(xy, H, refs)
+                hint = f"Enter = 추천 ({sg[0]:g} {sg[1]:g}), x = 취소" if sg is not None else "빈 줄 = 취소"
+                s = input(f"[{mode}] 클릭 ({xy[0]:.0f},{xy[1]:.0f})의 맵 좌표 'x y' ({hint}): ").strip()
+                if not s and sg is not None:
+                    s = f"{sg[0]} {sg[1]}"
                 try:
                     X, Y = (float(v) for v in s.replace(",", " ").split())
                 except ValueError:
