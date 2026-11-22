@@ -133,7 +133,8 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
             fps_bev = [transform_points(d["footprint_map"], M) for d in dets if "footprint_map" in d]
             img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain),
                              draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev, zones_bev,
-                                           [bool(d.get("illegal")) for d in dets]), header,
+                                           [bool(d.get("illegal")) for d in dets],
+                                           [d.get("track_id") for d in dets]), header,
                              cfg["render"]["height"])
             if writer is None:
                 writer = cv2.VideoWriter(str(out_dir / "split_view.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),

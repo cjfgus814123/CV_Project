@@ -49,12 +49,17 @@ def draw_frame_view(frame_img: np.ndarray, dets: list[dict], slots_img: dict, st
         cv2.circle(out, tuple(np.int32(d["contact_img"])), 6, col, -1)
         if d["truncated"]:
             cv2.circle(out, tuple(np.int32(d["contact_img"])), 10, col, 1)
+        if d.get("track_id") is not None:  # 3차: ByteTrack ID
+            x, y = np.int32(d["contact_img"])
+            cv2.putText(out, str(d["track_id"]), (x + 8, y - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.putText(out, str(d["track_id"]), (x + 8, y - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.7, col, 2, cv2.LINE_AA)
     return out
 
 
 def draw_map_view(bev_img: np.ndarray, slots_bev: dict, states: dict[str, int], contacts_bev: np.ndarray,
                   uncertain: set[str] = frozenset(), footprints_bev: list | None = None,
-                  zones_bev: list | None = None, illegal: list[bool] | None = None) -> np.ndarray:
+                  zones_bev: list | None = None, illegal: list[bool] | None = None,
+                  track_ids: list | None = None) -> np.ndarray:
     """오른쪽: map_bev 위 칸 상태 색칠 + (2차) 차 바닥 사각형 + (3차) 통로·금지구역 테두리 + 접점 (불법주차는 주황)."""
     out = _fill(bev_img, slots_bev, states, uncertain, 0.45, 1, 0.38)
     for z in zones_bev or []:
@@ -64,6 +69,9 @@ def draw_map_view(bev_img: np.ndarray, slots_bev: dict, states: dict[str, int], 
     for i, p in enumerate(np.asarray(contacts_bev).reshape(-1, 2)):
         bad = bool(illegal and illegal[i])
         cv2.circle(out, tuple(np.int32(p)), 7 if bad else 4, ILLEGAL_COLOR if bad else (0, 255, 255), -1)
+        if track_ids and track_ids[i] is not None:
+            cv2.putText(out, str(track_ids[i]), (int(p[0]) + 6, int(p[1]) - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                        ILLEGAL_COLOR if bad else (255, 255, 255), 1, cv2.LINE_AA)
     return out
 
 
