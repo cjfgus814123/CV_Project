@@ -21,9 +21,9 @@ from evaluate import evaluate  # noqa: E402
 
 # 이름: (설명, 설정 덮어쓰기). 기본 설정 = 제안 방식 (configs/default.yaml)
 VARIANTS = {
-    "proposed": ("제안: 지면 접점(마스크 껍질 아래) + 맵 판정 + 다수결", {}),
+    "proposed": ("제안: 지면 접점(마스크 껍질 아래) + 깊이 오프셋 0.9m + 맵 판정 + 다수결", {}),
     "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_n": 1}}),
-    "proposed_offset_0.9": ("제안 + 접점 깊이 오프셋 0.9m", {"contact": {"depth_offset_m": 0.9}}),
+    "proposed_offset_0": ("제안, 깊이 오프셋 없음 (원래 설계)", {"contact": {"depth_offset_m": 0.0}}),
     "bbox_bottom": ("접점 = 박스 아래변 중앙", {"contact": {"mode": "bbox_bottom_center"}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
     "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),
