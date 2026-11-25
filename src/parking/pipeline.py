@@ -45,7 +45,8 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
         det = {**d, "contact_img": pt_img, "contact_map": pt_map, "slot": sid, "truncated": trunc}
         if fcfg["enabled"] and d["mask_polys_img"]:
             orient = slots[nearest_slot(pt_map, slots, float("inf"))]  # 차 방향 = 가장 가까운 칸 방향
-            fp = footprint_from_det(d["mask_polys_img"], H, away_dir_map(pt_img, H), orient, cfg["geometry"]["car_size_m"])
+            fp = footprint_from_det(d["mask_polys_img"], H, away_dir_map(pt_img, H), orient, cfg["geometry"]["car_size_m"],
+                                    None if sid else (fcfg["crosswise_min_m"], fcfg["crosswise_ratio"]))
             det["footprint_map"] = np.float32(fp.exterior.coords[:4])
             overlaps.append(slot_overlaps(fp, slots))
         elif sid is not None:

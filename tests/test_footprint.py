@@ -63,3 +63,17 @@ def test_line_stepping_car_occupies_both_below_straddle():
     fp = estimate_footprint(_visible_edges(1.5, 0.15), np.array([-0.6, 0.8]), U, V, CAR)
     st = footprint_states([slot_overlaps(fp, SLOTS)], SLOTS, 0.15, 0.5)
     assert st == {"A01": OCCUPIED, "A02": OCCUPIED, "A03": FREE}
+
+
+def test_crosswise_car_in_aisle_lies_along_row():
+    # 통로(y 5~11)를 가로지르는 차: 보이는 앞면 아래 경계가 x 방향 4.6m -> 사각형을 눕혀 칸을 덮지 않음
+    from parking.footprint import looks_crosswise
+    chain = np.array([[1.0, 5.4], [5.6, 5.4], [5.6, 7.2]])
+    assert looks_crosswise(chain, U, V, 3.0, 1.5)
+    away = np.array([0.0, 1.0])
+    upright = estimate_footprint(chain, away, U, V, CAR)
+    lying = estimate_footprint(chain, away, U, V, CAR[::-1])
+    assert max(slot_overlaps(upright, SLOTS).values(), default=0) == 0  # (칸은 y 0~5라 둘 다 안 겹침: 방향만 확인)
+    xs, ys = np.asarray(lying.exterior.coords).T
+    assert np.isclose(np.ptp(xs), 4.7) and np.isclose(np.ptp(ys), 1.8)
+    assert not looks_crosswise(np.array([[0.4, 0.2], [2.2, 0.2], [2.2, 4.9]]), U, V, 3.0, 1.5)  # 칸에 바르게 선 차

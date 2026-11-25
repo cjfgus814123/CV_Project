@@ -58,11 +58,24 @@ def estimate_footprint(chain_map: np.ndarray, away_map: np.ndarray, u: np.ndarra
     return Polygon([u0 * u + v0 * v, u1 * u + v0 * v, u1 * u + v1 * v, u0 * u + v1 * v])
 
 
+def looks_crosswise(chain_map: np.ndarray, u: np.ndarray, v: np.ndarray, min_len: float, ratio: float) -> bool:
+    """보이는 바닥 경계가 칸 폭 방향(u)으로 min_len 이상, 칸 길이 방향(v)의 ratio배 이상 길면 칸과 수직으로 선 차."""
+    chain_map = np.asarray(chain_map, np.float64).reshape(-1, 2)
+    su, sv = np.ptp(chain_map @ u), np.ptp(chain_map @ v)
+    return su >= min_len and su >= ratio * sv
+
+
 def footprint_from_det(mask_polys_img: list, H: np.ndarray, away_map: np.ndarray, slot_poly: Polygon,
-                       car_size: tuple[float, float]) -> Polygon:
-    """검출 1개 -> 차 바닥 사각형 (맵). 차 방향은 slot_poly(가장 가까운 칸) 방향으로 가정."""
+                       car_size: tuple[float, float], crosswise: tuple[float, float] | None = None) -> Polygon:
+    """검출 1개 -> 차 바닥 사각형 (맵). 차 방향은 slot_poly(가장 가까운 칸) 방향으로 가정.
+
+    crosswise=(min_len, ratio)가 있고 보이는 바닥 경계가 칸과 수직으로 길면 사각형을 눕힌다 (통로를 가로지르는 차).
+    주차된 차는 바닥 경계가 높이 때문에 옆으로 퍼져 보이기도 해서, 호출 쪽에서 통로 위 차에만 켠다.
+    """
     chain_map = transform_points(bottom_chain_img(mask_polys_img).astype(np.float32), H)
     u, v = slot_axes(slot_poly)
+    if crosswise and looks_crosswise(chain_map, u, v, *crosswise):
+        car_size = car_size[::-1]
     return estimate_footprint(chain_map, away_map, u, v, car_size)
 
 
