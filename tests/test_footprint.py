@@ -58,8 +58,8 @@ def test_looking_straight_down_axis_centers():
     assert np.isclose(xs.min(), 0.35) and np.isclose(xs.max(), 2.15)
 
 
-def test_high_straddle_threshold_keeps_occupancy():
-    # 44%/56%로 걸친 차도 침범 기준을 0.5로 올리면 가장 많이 겹친 칸만 점유
+def test_line_stepping_car_occupies_both_below_straddle():
+    # 44%/56%로 걸친 차: 침범 기준(0.5) 미만이어도 15% 이상 걸친 칸은 둘 다 점유 (빈칸으로 안내하지 않음)
     fp = estimate_footprint(_visible_edges(1.5, 0.15), np.array([-0.6, 0.8]), U, V, CAR)
     st = footprint_states([slot_overlaps(fp, SLOTS)], SLOTS, 0.15, 0.5)
-    assert st == {"A01": OCCUPIED, "A02": FREE, "A03": FREE}
+    assert st == {"A01": OCCUPIED, "A02": OCCUPIED, "A03": FREE}

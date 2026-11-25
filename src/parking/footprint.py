@@ -78,18 +78,18 @@ def slot_overlaps(fp: Polygon, slots: dict[str, Polygon]) -> dict[str, float]:
 
 def footprint_states(overlaps: list[dict[str, float]], slots: dict, tau_occupy: float,
                      tau_straddle: float) -> dict[str, int]:
-    """차마다: 가장 많이 겹친 칸이 tau_occupy 이상이면 점유(1).
-    그 밖에 tau_straddle 이상 겹친 칸이 있으면 그 칸들과 가장 많이 겹친 칸 모두 침범(2).
+    """차마다 (겹침 비율 = 차 바닥 면적 기준):
+    - tau_occupy 이상 겹친 칸은 모두 점유(1). 선을 밟은 차는 걸친 칸도 막으므로 빈칸으로 안내하지 않는다.
+    - 가장 많이 겹친 칸 말고도 tau_straddle 이상 겹친 칸이 있으면, 그 칸들과 가장 많이 겹친 칸 모두 침범(2).
     칸에 침범이 하나라도 있으면 2 (점유보다 우선).
     """
     states = dict.fromkeys(slots, FREE)
     for ov in overlaps:
-        if not ov:
+        hit = [k for k, r in ov.items() if r >= tau_occupy]
+        if not hit:
             continue
         best = max(ov, key=ov.get)
-        if ov[best] < tau_occupy:
-            continue
-        other = [k for k, r in ov.items() if k != best and r >= tau_straddle]
-        for k in [best, *other]:
-            states[k] = max(states[k], ENCROACH if other else OCCUPIED)
+        other = [k for k in hit if k != best and ov[k] >= tau_straddle]
+        for k in hit:
+            states[k] = max(states[k], ENCROACH if (other and k in (best, *other)) else OCCUPIED)
     return states

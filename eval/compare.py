@@ -20,13 +20,14 @@ sys.path.insert(0, str(Path(__file__).parent))
 from evaluate import evaluate  # noqa: E402
 
 # 이름: (설명, 설정 덮어쓰기). 기본 설정 = 제안 방식 (configs/default.yaml)
+S1 = {"footprint": {"enabled": False}}  # 1차만 (접점 1개로 판정)
 VARIANTS = {
-    "proposed": ("제안: 지면 접점(마스크 껍질 아래) + 깊이 오프셋 0.9m + 맵 판정 + 다수결", {}),
+    "proposed": ("제안 (1차+2차): 지면 접점 + 차 바닥 영역 겹침 (점유 15%, 침범 30%) + 다수결", {}),
     "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_n": 1}}),
-    "proposed_offset_0": ("제안, 깊이 오프셋 없음 (원래 설계)", {"contact": {"depth_offset_m": 0.0}}),
-    "bbox_bottom": ("접점 = 박스 아래변 중앙", {"contact": {"mode": "bbox_bottom_center"}}),
-    "footprint": ("2차: 차 바닥 영역(표준 차 크기) + 차 면적 대비 겹침, 침범 기준 30%", {"footprint": {"enabled": True}}),
-    "footprint_tau0.15": ("2차, 침범 기준 15% (논문 ③)", {"footprint": {"enabled": True, "tau_straddle": 0.15}}),
+    "proposed_straddle0.15": ("제안, 침범 기준 15% (논문 ③)", {"footprint": {"tau_straddle": 0.15}}),
+    "stage1_contact": ("1차만: 지면 접점 + 깊이 오프셋 0.9m + 맵 판정 + 다수결", S1),
+    "stage1_offset_0": ("1차만, 깊이 오프셋 없음 (원래 설계)", {**S1, "contact": {"depth_offset_m": 0.0}}),
+    "stage1_bbox_bottom": ("1차만, 접점 = 박스 아래변 중앙", {**S1, "contact": {"mode": "bbox_bottom_center"}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
     "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),
 }

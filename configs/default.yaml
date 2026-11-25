@@ -35,8 +35,8 @@ occupancy:
   smooth_n: 5               # 시간 보정 다수결 프레임 수
 
 footprint:                  # 2차
-  enabled: false            # true면 칸 판정을 차 바닥 영역 겹침으로 (false = 1차 접점 판정)
-  tau_occupy: 0.15          # 차 바닥 면적 대비, 가장 많이 겹친 칸이 이 이상이면 점유 (논문 ③의 15%)
+  enabled: true             # 2차 적용: 칸 판정을 차 바닥 영역 겹침으로 (false = 1차 접점 판정만, 비교용)
+  tau_occupy: 0.15          # 차 바닥 면적 대비 이 이상 겹친 칸은 모두 점유 (논문 ③의 15%, 선 밟은 차의 옆 칸 포함)
   tau_straddle: 0.3         # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범. 2026-11-22 tune(cam3 연출 구간): 0.3에서 오경보 장면 0
 
 track:                      # 3차 ByteTrack (Ultralytics). 검출 캐시(2fps)에 붙임
