@@ -22,10 +22,10 @@ from evaluate import evaluate  # noqa: E402
 # 이름: (설명, 설정 덮어쓰기). 기본 설정 = 제안 방식 (configs/default.yaml)
 S1 = {"footprint": {"enabled": False}}  # 1차만 (접점 1개로 판정)
 VARIANTS = {
-    "proposed": ("제안 (1차+2차): 지면 접점 + 차 바닥 영역 겹침 (점유 30%, 침범 35%) + 다수결", {}),
+    "proposed": ("제안 (1차+2차): 지면 접점 + 차 바닥 영역 겹침 (점유 20%, 침범 25%) + 다수결", {}),
     "proposed_occupy0.15": ("제안, 점유 겹침 기준 15% (논문 ③)", {"footprint": {"tau_occupy": 0.15}}),
     "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_n": 1}}),
-    "proposed_straddle0.15": ("제안, 침범 기준 15% (논문 ③)", {"footprint": {"tau_straddle": 0.15}}),
+    "proposed_straddle0.15": ("제안, 침범 기준 15% (논문 ③)", {"footprint": {"tau_occupy": 0.15, "tau_straddle": 0.15}}),
     "stage1_contact": ("1차만: 지면 접점 + 깊이 오프셋 0.9m + 맵 판정 + 다수결", S1),
     "stage1_offset_0": ("1차만, 깊이 오프셋 없음 (원래 설계)", {**S1, "contact": {"depth_offset_m": 0.0}}),
     "stage1_bbox_bottom": ("1차만, 접점 = 박스 아래변 중앙", {**S1, "contact": {"mode": "bbox_bottom_center"}}),
