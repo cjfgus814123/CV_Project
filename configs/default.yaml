@@ -39,7 +39,7 @@ footprint:                  # 2차
   tau_occupy: 0.2           # 차 바닥 면적 대비 이 이상 겹친 칸은 모두 점유 (선 밟은 차의 옆 칸 포함). 2026-11-25 tune(줄 끝 점 추가한 H)
   crosswise_min_m: 3.0      # 접점이 통로에 있는 차: 보이는 바닥 경계가 칸 폭 방향으로 이 이상이고
   crosswise_ratio: 1.5      #   칸 길이 방향의 이 배 이상이면 가로로 선 차로 보고 사각형을 눕힘
-  tau_straddle: 0.25        # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범. 2026-11-25 tune: 장면 맞음 29 / 놓침 46 / 오경보 0
+  tau_straddle: 0.25        # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범. 2026-11-25 tune (GT 수정 후): 장면 맞음 27 / 놓침 38 / 오경보 2
 
 track:                      # 3차 ByteTrack (Ultralytics). 검출 캐시(2fps)에 붙임
   high_thresh: 0.25
