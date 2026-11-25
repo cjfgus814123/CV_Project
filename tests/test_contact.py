@@ -80,3 +80,11 @@ def test_facing_car_offset_moves_contact_off_slot_edge(cam, y):
     assert c["mask_bottom"][1] - front == pytest.approx(0.15, abs=0.05)
     assert c["mask_bottom+0.9"][1] - front > 1.0
     assert nearest_slot(c["mask_bottom+0.9"], slots, 0.3) == nearest_slot(np.array([1.25, y]), slots, 0)
+
+
+def test_lowest_points_per_column():
+    # 아래변이 기운 사다리꼴: 열마다 가장 아래 픽셀이 아래변 위에 있어야 함
+    from parking.contact import lowest_points_img
+    pts = lowest_points_img([[[0, 0], [10, 0], [10, 20], [0, 10]]])
+    assert len(pts) == 11
+    assert np.allclose(pts[:, 1], 10 + pts[:, 0], atol=1)

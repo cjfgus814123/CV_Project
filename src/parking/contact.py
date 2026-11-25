@@ -10,7 +10,7 @@ import numpy as np
 
 from parking.homography import transform_points
 
-MODES = ("mask_bottom_center", "bbox_bottom_center", "bbox_center")
+MODES = ("mask_bottom_center", "bbox_bottom_center", "bbox_center", "mask_lowest_mean")
 
 
 def hull_bottom_center(mask_polys_img: list) -> np.ndarray:
@@ -30,6 +30,25 @@ def hull_bottom_center(mask_polys_img: list) -> np.ndarray:
     return np.array([xc, max(ys)], np.float32)
 
 
+def lowest_points_img(mask_polys_img: list) -> np.ndarray:
+    """마스크의 세로줄(열)마다 가장 아래 픽셀 (영상, (K,2) float32). Laptiev 외 (2026) 식 (14)."""
+    pts = [np.asarray(p, np.float32).reshape(-1, 2) for p in mask_polys_img if len(p) > 2]
+    x0, y0 = np.floor(np.concatenate(pts).min(0)).astype(int)
+    x1, y1 = np.ceil(np.concatenate(pts).max(0)).astype(int)
+    canvas = np.zeros((y1 - y0 + 1, x1 - x0 + 1), np.uint8)
+    cv2.fillPoly(canvas, [np.round(p - [x0, y0]).astype(np.int32) for p in pts], 1)
+    cols = np.flatnonzero(canvas.any(0))
+    rows = canvas.shape[0] - 1 - np.argmax(canvas[::-1, cols], axis=0)
+    return np.stack([cols + x0, rows + y0], 1).astype(np.float32)
+
+
+def lowest_mean_map(mask_polys_img: list, H: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Laptiev 외 (2026) 식 (14)~(18): 열마다 가장 아래 픽셀을 모두 맵으로 옮겨 평균.
+    반환 (평균점 (2,), 옮긴 점들 (K,2)), 맵 좌표."""
+    pts_map = transform_points(lowest_points_img(mask_polys_img), H)
+    return pts_map.mean(0).astype(np.float32), pts_map
+
+
 def is_truncated(bbox_img, image_size: tuple[int, int], edge_margin_px: float) -> bool:
     """박스가 왼쪽·오른쪽·아래 경계에 닿으면 잘린 검출. 위쪽은 바닥 접점과 무관해서 제외."""
     x1, _, x2, y2 = bbox_img
@@ -41,14 +60,18 @@ def contact_point_img(mask_polys_img: list | None, bbox_img, mode: str,
                       image_size: tuple[int, int], edge_margin_px: float) -> tuple[np.ndarray, bool]:
     """검출 1개의 지면 접점(영상 픽셀, (2,) float32)과 truncated 여부.
 
-    mode: mask_bottom_center | bbox_bottom_center | bbox_center.
-    마스크가 없으면 mask_bottom_center 대신 bbox_bottom_center를 쓴다.
+    mode: mask_bottom_center | bbox_bottom_center | bbox_center | mask_lowest_mean.
+    마스크가 없으면 마스크 모드 대신 bbox_bottom_center를 쓴다.
+    mask_lowest_mean은 맵에서 평균을 내야 해서 여기서는 표시용 점(가장 아래 픽셀들의 영상 평균)만 준다
+    (맵 좌표는 lowest_mean_map).
     """
     if mode not in MODES:
         raise ValueError(f"알 수 없는 contact mode: {mode}")
     x1, y1, x2, y2 = bbox_img
     if mode == "mask_bottom_center" and mask_polys_img:
         pt = hull_bottom_center(mask_polys_img)
+    elif mode == "mask_lowest_mean" and mask_polys_img:
+        pt = lowest_points_img(mask_polys_img).mean(0)
     elif mode == "bbox_center":
         pt = np.array([(x1 + x2) / 2, (y1 + y2) / 2], np.float32)
     else:

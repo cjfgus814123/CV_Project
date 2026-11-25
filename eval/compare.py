@@ -29,6 +29,11 @@ VARIANTS = {
     "stage1_contact": ("1차만: 지면 접점 + 깊이 오프셋 0.9m + 맵 판정 + 다수결", S1),
     "stage1_offset_0": ("1차만, 깊이 오프셋 없음 (원래 설계)", {**S1, "contact": {"depth_offset_m": 0.0}}),
     "stage1_bbox_bottom": ("1차만, 접점 = 박스 아래변 중앙", {**S1, "contact": {"mode": "bbox_bottom_center"}}),
+    "paper_laptiev": ("Laptiev 외 (2026): 열마다 가장 아래 픽셀의 맵 평균 + 칸 안 접점 비율 < 0.5면 침범",
+                      {"contact": {"mode": "mask_lowest_mean", "depth_offset_m": 0.0}, "footprint": {"enabled": False},
+                       "occupancy": {"boundary_tol_m": 0.0, "smooth_n": 1}, "quality": {"enabled": True}}),
+    "box3d": ("제안 + 차 바닥 = 3D 박스 맞추기 밑면 (BoxCars 계열, 카메라 = H + K)", {"footprint": {"method": "box3d"}}),
+    "slot_volume": ("Masmoudi 외: 칸 3D 상자의 안 가려진 부분이 마스크로 덮인 비율 >= 0.5", {"slot_volume": {"enabled": True}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
     "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),
 }
@@ -57,15 +62,15 @@ def main() -> None:
         rows.append((name, desc, t))
         print(f"{name:22s} 빈칸P {t['free_precision']:.3f}  빈칸R {t['free_recall']:.3f}  "
               f"점유R {t['occ_recall']:.3f}  Acc {t['accuracy']:.3f}  MAE {t['free_count_mae']:.2f}  "
-              f"점유→빈(치명) {t['occ_free']}  침범 P {t['enc_precision']:.2f} R {t['enc_recall']:.2f} "
+              f"점유→빈(치명) {t['occ_free']}  빈→점유 {t['free_occ']}  침범 P {t['enc_precision']:.2f} R {t['enc_recall']:.2f} "
               f"(맞음 {t['enc_tp']} 오경보 {t['enc_fp']} 놓침 {t['enc_fn']})  장면: 맞음 {t['ev_tp']} 놓침 {t['ev_fn']} 오경보 {t['ev_fp']}")
 
     md = [f"# 방식 비교 (split={a.split or 'all'}, clips: {', '.join(c.name for c in clips)})", "",
           f"GT {rows[0][2]['frames']}프레임, 칸 판정 {rows[0][2]['n']}건. 설정: {a.config}", "",
-          "| 방식 | 설명 | 빈칸 Precision | 빈칸 Recall | 빈칸 F1 | 점유 Recall | Accuracy | 빈자리 수 MAE | 점유→빈칸 (치명) | 침범 Precision | 침범 Recall | 침범 칸 맞음/오경보/놓침 | 침범 장면 맞음/놓침/오경보 |",
-          "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+          "| 방식 | 설명 | 빈칸 Precision | 빈칸 Recall | 빈칸 F1 | 점유 Recall | Accuracy | 빈자리 수 MAE | 점유→빈칸 (치명) | 빈칸→점유 | 침범 Precision | 침범 Recall | 침범 칸 맞음/오경보/놓침 | 침범 장면 맞음/놓침/오경보 |",
+          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
     md += [f"| {n} | {d} | {t['free_precision']:.3f} | {t['free_recall']:.3f} | {t['free_f1']:.3f} | "
-           f"{t['occ_recall']:.3f} | {t['accuracy']:.3f} | {t['free_count_mae']:.2f} | {t['occ_free']} | "
+           f"{t['occ_recall']:.3f} | {t['accuracy']:.3f} | {t['free_count_mae']:.2f} | {t['occ_free']} | {t['free_occ']} | "
            f"{t['enc_precision']:.3f} | {t['enc_recall']:.3f} | {t['enc_tp']}/{t['enc_fp']}/{t['enc_fn']} | "
            f"{t['ev_tp']}/{t['ev_fn']}/{t['ev_fp']} |" for n, d, t in rows]
     path = out_root / f"compare_{a.split or 'all'}.md"

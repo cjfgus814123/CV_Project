@@ -24,7 +24,7 @@ geometry:
   bev_px_per_m: 20
 
 contact:
-  mode: mask_bottom_center  # | bbox_bottom_center | bbox_center
+  mode: mask_bottom_center  # | bbox_bottom_center | bbox_center | mask_lowest_mean (Laptiev 외 2026: 열마다 가장 아래 픽셀의 맵 평균)
   edge_margin_px: 2         # 박스가 좌·우·아래 경계에서 이 안이면 truncated
   depth_offset_m: 0.9       # 접점을 맵에서 카메라 반대쪽으로 미는 거리 (차 폭 절반). 0 = 원래 설계, 2026-11-22 tune clip 비교로 채택
 
@@ -34,12 +34,29 @@ occupancy:
   vis_unknown: 0.3          # 가시 비율 < 이면 판단불가(-1)
   smooth_n: 5               # 시간 보정 다수결 프레임 수
 
+quality:                    # (비교용) Laptiev 외 2026 식 (21): 배정 칸 안에 든 접점(열마다 가장 아래 픽셀) 비율 < r_min이면 그 칸 침범(2)
+  enabled: false            # contact.mode: mask_lowest_mean, footprint.enabled: false 와 함께 쓴다
+  r_min: 0.5                # 논문에 값 없음. 2026-11-26 tune: 0.5~0.9 모두 침범 오경보 89~199장, 오경보가 가장 적은 0.5
+
 footprint:                  # 2차
+  method: rect              # rect (보이는 바닥 경계 + 칸 방향 사각형) | box3d (3D 박스 맞추기, 비교용)
   enabled: true             # 2차 적용: 칸 판정을 차 바닥 영역 겹침으로 (false = 1차 접점 판정만, 비교용)
   tau_occupy: 0.2           # 차 바닥 면적 대비 이 이상 겹친 칸은 모두 점유 (선 밟은 차의 옆 칸 포함). 2026-11-25 tune(줄 끝 점 추가한 H)
   crosswise_min_m: 3.0      # 접점이 통로에 있는 차: 보이는 바닥 경계가 칸 폭 방향으로 이 이상이고
   crosswise_ratio: 1.5      #   칸 길이 방향의 이 배 이상이면 가로로 선 차로 보고 사각형을 눕힘
   tau_straddle: 0.25        # 두 번째로 겹친 칸이 이 이상이면 두 칸 모두 침범. 2026-11-25 tune (GT 수정 후): 장면 맞음 27 / 놓침 38 / 오경보 2
+
+box3d:                      # footprint.method: box3d 일 때. 차를 바닥 위 직육면체로 보고 투영이 마스크와 가장 잘 맞는 위치·방향을 찾음
+  intrinsics: data/calib/phone_0.5x/calib.json   # 내부 파라미터 K (H와 함께 카메라 자세 복원)
+  size_m: [1.8, 4.7, 1.5]   # 폭, 길이, 높이
+  angles_deg: [-30, -20, -10, 0, 10, 20, 30, 75, 90, 105]   # 칸 길이 방향 기준 후보 각도
+  rotate_gain: 0.15         # 칸 방향 박스보다 IoU가 이만큼 더 높아야 돌린 박스를 씀 (2026-11-26 tune: 0.05/0.1/0.15 중 최선)
+  min_iou: 0.55             # 가장 좋은 박스의 IoU가 이보다 낮으면 rect 사각형을 씀
+
+slot_volume:                # (비교용) Masmoudi 외: 칸 3D 상자 중 앞 칸 상자에 안 가려진 부분이 마스크로 덮인 비율 >= tau면 점유
+  enabled: false
+  height_m: 1.5
+  tau: 0.5                  # 2026-11-26 tune 0.2~0.7 중 정확도 최고 (0.866)
 
 track:                      # 3차 ByteTrack (Ultralytics). 검출 캐시(2fps)에 붙임
   high_thresh: 0.25
