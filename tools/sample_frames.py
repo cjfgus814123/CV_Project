@@ -13,7 +13,7 @@ from pathlib import Path
 
 import cv2
 
-from parking.detect import load_cache
+from parking.detect import cache_name, load_cache
 
 
 def pick(times: list[float], every_sec: float, max_n: int) -> list[int]:
@@ -39,10 +39,11 @@ def main() -> None:
     ap.add_argument("--start", type=float, default=None, help="이 시각(초) 이후만")
     ap.add_argument("--end", type=float, default=None, help="이 시각(초) 이전만")
     ap.add_argument("--out", default="outputs")
+    ap.add_argument("--fps", type=float, default=2, help="고를 검출 캐시의 fps. 기본 2 (15의 배수 프레임 -> 2·10·30fps 캐시 모두에 있음)")
     a = ap.parse_args()
 
     clip = Path(a.clip)
-    recs = [r for r in load_cache(Path(a.out) / clip.name / "detections.jsonl")
+    recs = [r for r in load_cache(Path(a.out) / clip.name / cache_name(a.fps))
             if (a.start is None or r["time_sec"] >= a.start) and (a.end is None or r["time_sec"] <= a.end)]
     idx = [recs[k]["frame_idx"] for k in pick([r["time_sec"] for r in recs], a.every_sec, a.max)]
     out = clip / "gt_frames"

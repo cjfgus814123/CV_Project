@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 
 from parking.contact import contact_point_img
-from parking.detect import load_cache
+from parking.detect import cache_name, load_cache
 from parking.io import load_config
 
 PT_COLORS = {"bbox_center": (0, 0, 255), "bbox_bottom_center": (255, 120, 0), "mask_bottom_center": (0, 220, 0)}
@@ -79,8 +79,8 @@ def main() -> None:
 
     clip = Path(a.clip)
     out_dir = Path(a.out) / clip.name
-    recs = load_cache(out_dir / "detections.jsonl")
     cfg = load_config(a.config)
+    recs = load_cache(out_dir / cache_name(cfg["sampling"]["fps"]))
     reader = FrameReader(clip / "video.mp4")
     save_dir = out_dir / "debug_contact"
     save_dir.mkdir(parents=True, exist_ok=True)

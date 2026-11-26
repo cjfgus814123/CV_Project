@@ -8,7 +8,7 @@ from __future__ import annotations
 import copy
 
 BASELINE = {"contact": {"mode": "bbox_center", "depth_offset_m": 0.0},
-            "occupancy": {"boundary_tol_m": 0.0, "smooth_n": 1}, "footprint": {"enabled": False}}
+            "occupancy": {"boundary_tol_m": 0.0, "smooth_sec": 0}, "footprint": {"enabled": False}}
 
 
 def with_overrides(cfg: dict, overrides: dict) -> dict:

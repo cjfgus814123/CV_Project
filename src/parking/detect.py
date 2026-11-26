@@ -62,6 +62,11 @@ def detect_frame(model, frame_img: np.ndarray, cfg: dict) -> list[dict]:
     return dets
 
 
+def cache_name(fps: float) -> str:
+    """검출 캐시 파일 이름. 2fps는 예전 이름 그대로 (기존 캐시·GT 프레임 호환)."""
+    return "detections.jsonl" if fps == 2 else f"detections_{fps:g}fps.jsonl"
+
+
 def run_detection(video_path: str | Path, cfg: dict, cache_path: str | Path,
                   valid_sec: tuple[float, float] | None = None, vis_dir: str | Path | None = None,
                   vis_every: int = 0) -> Path:
@@ -141,7 +146,7 @@ def load_cache(cache_path: str | Path) -> list[dict]:
 def main() -> None:
     from parking.io import load_clip_meta, load_config
 
-    ap = argparse.ArgumentParser(description="clip 검출 -> outputs/<clip_id>/detections.jsonl")
+    ap = argparse.ArgumentParser(description="clip 검출 -> outputs/<clip_id>/detections[_<fps>fps].jsonl")
     ap.add_argument("--clip", required=True, help="data/clips/<clip_id>")
     ap.add_argument("--config", default="configs/default.yaml")
     ap.add_argument("--out", default="outputs")
@@ -151,7 +156,8 @@ def main() -> None:
     clip = Path(a.clip)
     meta = load_clip_meta(clip)
     out_dir = Path(a.out) / clip.name
-    run_detection(clip / "video.mp4", load_config(a.config), out_dir / "detections.jsonl",
+    cfg = load_config(a.config)
+    run_detection(clip / "video.mp4", cfg, out_dir / cache_name(cfg["sampling"]["fps"]),
                   meta.get("valid_sec"), out_dir / "det_vis", a.vis_every)
 
 

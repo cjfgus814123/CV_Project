@@ -20,7 +20,7 @@ import numpy as np
 from shapely.geometry import Point, Polygon
 
 from parking.contact import away_dir_map, contact_map, contact_point_img, lowest_mean_map
-from parking.detect import dedup, load_cache, run_detection
+from parking.detect import cache_name, dedup, load_cache, run_detection
 from parking.box3d import bottom_polygon, box_corners, camera_matrix, fit_box, project
 from parking.slot_volume import visible_regions, volume_states
 from parking.footprint import footprint_from_det, footprint_states, slot_axes, slot_overlaps
@@ -100,9 +100,10 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
 
 def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir: Path | None = None,
         verbose: bool = True) -> Path:
-    """out_dir: 결과 위치 (기본 outputs/<clip>). 검출 캐시는 항상 outputs/<clip>/detections.jsonl."""
+    """out_dir: 결과 위치 (기본 outputs/<clip>). 검출 캐시는 outputs/<clip>/detections[_<fps>fps].jsonl (sampling.fps)."""
     meta = load_clip_meta(clip)
-    cache = out_root / clip.name / "detections.jsonl"
+    fps_s = cfg["sampling"]["fps"]
+    cache = out_root / clip.name / cache_name(fps_s)
     out_dir = Path(out_dir) if out_dir else out_root / clip.name
     out_dir.mkdir(parents=True, exist_ok=True)
     if not cache.exists():
@@ -119,6 +120,7 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
     if sv["enabled"]:
         regions = visible_regions(slots, P, sv["height_m"])
     o = cfg["occupancy"]
+    smooth_n = max(1, round(o["smooth_sec"] * fps_s))
 
     # 가시 영역 (cam마다 고정): ROI가 있으면 ROI, 없으면 영상 네 모서리
     region = np.float64(cam["ground_roi_img"]) if cam.get("ground_roi_img") else image_rect(image_size)
@@ -132,7 +134,7 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
 
     zones = {z["id"]: Polygon(z["polygon"]) for z in m.get("aisles", []) + m.get("no_parking", [])}
     ic = cfg["illegal"]
-    tracker = Tracker(cfg, image_size) if ic["enabled"] and zones else None
+    tracker = Tracker(cfg, image_size, fps_s) if ic["enabled"] and zones else None
     stops = StopDetector(zones, ic["v_stop_mps"], ic["t_stop_sec"], ic["window_sec"]) if tracker else None
 
     writer = None
@@ -144,6 +146,9 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
         slots_bev = {s["id"]: [transform_points(np.float32(s["polygon"]), M)] for s in m["slots"]}
         zones_bev = [transform_points(np.float32(z.exterior.coords[:-1]), M) for z in zones.values()]
         cap, i_read = cv2.VideoCapture(str(clip / "video.mp4")), -1
+        src_fps = cap.get(cv2.CAP_PROP_FPS)
+        full_fps = cfg["render"].get("full_fps", False)
+        step = max(1, round(src_fps / fps_s))
 
     history, t0 = [], time.time()
     with open(out_dir / "occupancy.csv", "w", newline="") as f, open(out_dir / "occupancy_raw.csv", "w", newline="") as fr:
@@ -161,33 +166,37 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
                 for d in dets:
                     d["illegal"] = d["track_id"] in now
             history.append(raw)
-            states = temporal_smooth(history, o["smooth_n"])
+            states = temporal_smooth(history, smooth_n)
             for sid in slots:
                 w.writerow([rec["frame_idx"], rec["time_sec"], sid, states[sid]])
                 wr.writerow([rec["frame_idx"], rec["time_sec"], sid, raw[sid]])
             if not video:
                 continue
-            while i_read < rec["frame_idx"]:  # 순서대로 세며 읽기 (seek 금지)
-                cap.grab()
-                i_read += 1
-            frame = cap.retrieve()[1]
+            # full_fps: 다음 검출 프레임 전까지 원본 프레임마다 이 결과를 덧그린다 (오른쪽 지도는 한 번만 그림)
+            last = recs[n + 1]["frame_idx"] if full_fps and n + 1 < len(recs) else rec["frame_idx"] + (step if full_fps else 1)
             judged = [s for s in slots if states[s] != UNKNOWN]
             n_free = sum(states[s] == FREE for s in judged)
-            header = (f"{clip.name}  t={rec['time_sec']:6.1f}s  free {n_free} / {len(judged)}  "
-                      f"(unknown {len(slots) - len(judged)})  cars {len(dets)}"
-                      + (f"  illegal {sum(d.get('illegal', False) for d in dets)}" if tracker else ""))
             contacts_bev = transform_points(np.float32([d["contact_map"] for d in dets]).reshape(-1, 2), M) if dets else []
             fps_bev = [transform_points(d["footprint_map"], M) for d in dets if "footprint_map" in d]
             boxes_bev = [transform_points(d["box3d_map"], M) for d in dets if "box3d_map" in d]
-            img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain),
-                             draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev, zones_bev,
-                                           [bool(d.get("illegal")) for d in dets],
-                                           [d.get("track_id") for d in dets], boxes_bev), header,
-                             cfg["render"]["height"])
-            if writer is None:
-                writer = cv2.VideoWriter(str(out_dir / "split_view.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),
-                                         cfg["render"]["video_fps"], (img.shape[1], img.shape[0]))
-            writer.write(img)
+            right = draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev, zones_bev,
+                                  [bool(d.get("illegal")) for d in dets], [d.get("track_id") for d in dets], boxes_bev)
+            for i in range(rec["frame_idx"], last):
+                while i_read < i:  # 순서대로 세며 읽기 (seek 금지)
+                    ok = cap.grab()
+                    i_read += 1
+                ok, frame = cap.retrieve()
+                if not ok:
+                    break
+                header = (f"{clip.name}  t={i / src_fps:6.1f}s  free {n_free} / {len(judged)}  "
+                          f"(unknown {len(slots) - len(judged)})  cars {len(dets)}"
+                          + (f"  illegal {sum(d.get('illegal', False) for d in dets)}" if tracker else ""))
+                img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain), right, header,
+                                 cfg["render"]["height"])
+                if writer is None:
+                    writer = cv2.VideoWriter(str(out_dir / "split_view.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),
+                                             src_fps if full_fps else cfg["render"]["video_fps"], (img.shape[1], img.shape[0]))
+                writer.write(img)
             if n % 200 == 0:
                 print(f"  {n}/{len(recs)} ({time.time() - t0:.0f}s)")
     if writer is not None:

@@ -25,18 +25,18 @@ VARIANTS = {
     "proposed": ("제안 (1차+2차): 지면 접점 + 차 바닥 영역 겹침 (점유 20%, 침범 25%, 침범은 사각형·3D 박스 둘 다) + 다수결", {}),
     "proposed_rect": ("제안, 침범도 사각형만 (2026-11-26 이전 기본)", {"footprint": {"method": "rect"}}),
     "proposed_occupy0.15": ("제안, 점유 겹침 기준 15% (논문 ③)", {"footprint": {"tau_occupy": 0.15}}),
-    "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_n": 1}}),
+    "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_sec": 0}}),
     "proposed_straddle0.15": ("제안, 침범 기준 15% (논문 ③)", {"footprint": {"tau_occupy": 0.15, "tau_straddle": 0.15}}),
     "stage1_contact": ("1차만: 지면 접점 + 깊이 오프셋 0.9m + 맵 판정 + 다수결", S1),
     "stage1_offset_0": ("1차만, 깊이 오프셋 없음 (원래 설계)", {**S1, "contact": {"depth_offset_m": 0.0}}),
     "stage1_bbox_bottom": ("1차만, 접점 = 박스 아래변 중앙", {**S1, "contact": {"mode": "bbox_bottom_center"}}),
     "paper_laptiev": ("Laptiev 외 (2026): 열마다 가장 아래 픽셀의 맵 평균 + 칸 안 접점 비율 < 0.5면 침범",
                       {"contact": {"mode": "mask_lowest_mean", "depth_offset_m": 0.0}, "footprint": {"enabled": False},
-                       "occupancy": {"boundary_tol_m": 0.0, "smooth_n": 1}, "quality": {"enabled": True}}),
+                       "occupancy": {"boundary_tol_m": 0.0, "smooth_sec": 0}, "quality": {"enabled": True}}),
     "box3d": ("제안 + 차 바닥 = 3D 박스 맞추기 밑면 (BoxCars 계열, 카메라 = H + K)", {"footprint": {"method": "box3d"}}),
     "slot_volume": ("Masmoudi 외: 칸 3D 상자의 안 가려진 부분이 마스크로 덮인 비율 >= 0.5", {"slot_volume": {"enabled": True}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
-    "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),
+    "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_sec": 2.5}}),
 }
 
 

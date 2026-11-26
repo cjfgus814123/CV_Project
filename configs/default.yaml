@@ -29,7 +29,8 @@ auto_h:                     # setup_cam.py --auto: 같은 lot 다른 cam을 기�
   val_every: 5              # 자동 대응점 중 이 간격마다 1개를 검증점으로 (재투영 오차용)
 
 sampling:
-  fps: 2                    # 1차 기본. 3차는 10 이상
+  fps: 10                   # 검출 fps (2026-11-26: 2 -> 10). 원본 30fps의 약수만 정확 (30/fps 반올림 간격). 정답 프레임(15의 배수)이 들어가려면 2·10·30
+                            # 캐시: fps 2 = outputs/<clip>/detections.jsonl, 그 외 = detections_<fps>fps.jsonl
 
 geometry:
   slot_size_m: [2.48, 4.9]  # lotA 실측: 선 중심 간격 2.48 (내부 2.31 + 선 0.17), 줄 끝 칸(A10·B12·C12·D12)은 2.38, 깊이 B·C 4.9 / A·D 4.42
@@ -45,7 +46,7 @@ occupancy:
   boundary_tol_m: 0.3       # 임시값: 칸 경계 허용 거리, 튜닝 clip에서 조정
   vis_judge: 0.7            # 가시 비율 >= 이면 판정
   vis_unknown: 0.3          # 가시 비율 < 이면 판단불가(-1)
-  smooth_n: 5               # 시간 보정 다수결 프레임 수
+  smooth_sec: 2.5           # 시간 보정 다수결 창 (초). 프레임 수 = round(초 x 검출 fps), 최소 1. 2fps에서 5프레임 (이전 smooth_n: 5)
 
 quality:                    # (비교용) Laptiev 외 2026 식 (21): 배정 칸 안에 든 접점(열마다 가장 아래 픽셀) 비율 < r_min이면 그 칸 침범(2)
   enabled: false            # contact.mode: mask_lowest_mean, footprint.enabled: false 와 함께 쓴다
@@ -75,7 +76,7 @@ track:                      # 3차 ByteTrack (Ultralytics). 검출 캐시(2fps)�
   high_thresh: 0.25
   low_thresh: 0.1
   new_track_thresh: 0.25
-  buffer_frames: 20         # 놓친 트랙 유지 프레임 (2fps면 10초)
+  buffer_sec: 10            # 놓친 트랙 유지 시간 (초). 프레임 수 = 초 x 검출 fps
   match_thresh: 0.8
 
 illegal:                    # 3차
@@ -86,4 +87,5 @@ illegal:                    # 3차
 
 render:
   height: 720               # Split-View 높이(px)
-  video_fps: 4              # 결과 영상 fps (샘플링 2fps면 2배속)
+  full_fps: true            # true = 원본 모든 프레임(30fps)에 직전 검출 결과를 덧그려 실제 속도 영상. false = 검출 프레임만
+  video_fps: 4              # full_fps: false일 때 결과 영상 fps
