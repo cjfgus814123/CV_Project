@@ -15,6 +15,19 @@ homography:
   ransac_thresh_m: 0.15   # 맵 좌표 기준(m). OpenCV 기본 3.0은 3m라 너무 느슨
   bev_margin_m: 15        # 탑뷰 범위 = 클릭한 점들의 범위 ± 이 값 (∩ 화면 가시 영역)
 
+auto_h:                     # setup_cam.py --auto: 같은 lot 다른 cam을 기준으로 새 촬영 위치의 대응점 자동 추정 (autoh.py)
+  sift_features: 8000
+  ratio: 0.75               # SIFT 매칭 비율 검사
+  ransac_px: 3.0            # 영상 간 바닥 Homography RANSAC (px)
+  lot_buffer_m: 3.0         # 기준 프레임에서 맵 칸·통로 범위 + 이 값 안의 특징점만 (바닥)
+  min_inliers: 50           # 가장 잘 맞는 기준 cam의 일치점이 이보다 적으면 실패 (손으로 찍기). lotA 실패 쌍 25~31, 성공 82~297
+  patch_px: 30              # 국소 정밀화 패치 반지름
+  search_px: 24             # 예측 위치 주변 탐색 반경
+  min_texture: 5            # 패치 밝기 표준편차가 이보다 작으면 건너뜀
+  min_score: 0.6            # 패치 매칭 NCC 최소값
+  ransac_m: 0.3             # 정밀화한 점 -> 맵 Homography RANSAC (m)
+  val_every: 5              # 자동 대응점 중 이 간격마다 1개를 검증점으로 (재투영 오차용)
+
 sampling:
   fps: 2                    # 1차 기본. 3차는 10 이상
 

@@ -1,6 +1,12 @@
 """기준 프레임에서 대응점 클릭 → H.json, ref_frame.png, bev.png (CLAUDE.md 5.1-2,3).
 
     python tools/setup_cam.py --clip data/clips/lotA_cam3_mid
+    python tools/setup_cam.py --clip data/clips/lotA_cam4_mid --auto            # 같은 lot 다른 cam 기준 자동 대응점 -> 화면에서 확인
+    python tools/setup_cam.py --clip data/clips/lotA_cam4_mid --auto --no-gui   # 확인 없이 바로 저장 (실시간·일괄 처리용)
+
+--auto: 같은 lot의 다른 cam 기준 프레임과 바닥 특징점(SIFT)을 맞춰 대략 H를 구하고, 그 cam들이 찍은 주차선 모서리를
+  새 프레임에서 국소 패치 매칭으로 정밀하게 찾아 대응점으로 넣는다 (parking/autoh.py). 결과는 points.json에 들어가므로
+  화면에서 격자·점을 확인하고 틀린 점은 u로 지우거나 직접 추가한 뒤 s로 저장한다. 시점이 많이 다르면 실패 -> 손으로 찍기.
 
 조작 (키 안내는 화면에도 표시):
   클릭      점 추가 → 터미널에 맵 좌표 "x y" (m) 입력 (빈 줄이면 취소)
@@ -37,6 +43,7 @@ from shapely.geometry import box
 
 from parking.homography import (compute_homography, image_rect, map_polyline_to_img, reprojection_error_m,
                                 transform_points, visible_region_map, warp_to_bev)
+from parking.autoh import auto_correspondences, load_refs, lot_polygon
 from parking.io import load_clip_meta, load_config, read_frame, save_cam, save_map
 
 MODES = ("corr", "val", "roi")
@@ -218,6 +225,9 @@ def main() -> None:
     ap.add_argument("--sec", type=float, default=None, help="기준 프레임 시각 (기본: valid_sec 시작 + 1초)")
     ap.add_argument("--config", default="configs/default.yaml")
     ap.add_argument("--data", default="data")
+    ap.add_argument("--auto", action="store_true", help="같은 lot 다른 cam 기준으로 대응점 자동 추정 (기존 points.json 덮어씀)")
+    ap.add_argument("--no-gui", action="store_true", help="--auto 결과를 화면 확인 없이 바로 저장")
+    ap.add_argument("--frame", default=None, help="기준 프레임 이미지 파일 (영상 대신, 평가용)")
     a = ap.parse_args()
 
     cfg, meta = load_config(a.config), load_clip_meta(a.clip)
@@ -227,7 +237,7 @@ def main() -> None:
     fps = cv2.VideoCapture(str(video)).get(cv2.CAP_PROP_FPS)
     sec = a.sec if a.sec is not None else meta.get("valid_sec", [0])[0] + 1.0
     frame_idx = round(sec * fps)
-    frame = read_frame(video, frame_idx)
+    frame = cv2.imread(a.frame) if a.frame else read_frame(video, frame_idx)
     h, w = frame.shape[:2]
 
     pts_path = cam_dir / "points.json"
@@ -235,6 +245,28 @@ def main() -> None:
     if pts.get("frame_idx", frame_idx) != frame_idx:
         print(f"주의: points.json은 프레임 {pts['frame_idx']} 기준 (지금 {frame_idx}). 카메라가 고정이면 괜찮음")
     pts["frame_idx"] = frame_idx
+    if a.auto:
+        ac = cfg["auto_h"]
+        m = json.loads((lot_dir / "map.json").read_text(encoding="utf-8"))
+        corr, info = auto_correspondences(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY),
+                                          load_refs(Path(a.data), meta["lot"], meta["cam"]),
+                                          lot_polygon(m, ac["lot_buffer_m"]), ac)
+        print(f"자동 대응점: 기준 cam 일치점 {info['inliers']}, 기준 {info.get('ref')}, "
+              f"찾은 점 {info.get('found', 0)} -> 사용 {len(corr)}" + (f" | 실패: {info['reason']}" if "reason" in info else ""))
+        if corr:
+            print("주의: 검증점도 자동으로 찾은 점이라 재투영 오차가 실제보다 작게 나온다 (lotA 시험: 표시 최대 0.07m, "
+                  "손 점 기준 최대 0.29~0.89m). map_overlay.png에서 칸이 주차선과 맞는지 눈으로 확인할 것")
+            pts["corr"] = [p for i, p in enumerate(corr) if i % ac["val_every"] != ac["val_every"] - 1]
+            pts["val"] = [p for i, p in enumerate(corr) if i % ac["val_every"] == ac["val_every"] - 1]
+            pts_path.write_text(json.dumps(pts, indent=1))
+        elif a.no_gui:
+            raise SystemExit("자동 추정 실패: --auto 없이 손으로 찍기")
+        if a.no_gui:
+            fitted = fit(pts, cfg)
+            if not fitted:
+                raise SystemExit("대응점이 4개 미만")
+            save_all(a, cfg, meta, frame, frame_idx, pts, fitted, cam_dir, lot_dir)
+            return
     print(f"{meta['cam']}: 프레임 {frame_idx} ({sec:.1f}s), 이어서 시작: {len(pts['corr'])}+{len(pts['val'])}점")
     refs = reference_points(Path(a.data), meta["lot"], meta["cam"])
     if len(refs):

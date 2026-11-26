@@ -103,7 +103,13 @@ outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
          맵의 칸 폴리곤은 **선 중심선** 기준으로 정한다 (이웃 칸이 틈 없이 붙어야 접점이 선 위에 떨어져도 칸에 배정됨).
      - 점은 화면 양 끝에 넓게 분포시킨다.
    - `cv2.findHomography(..., cv2.RANSAC)`로 H 계산.
-   - 자동 H 시험 (2026-11-26, 미채택): H를 아는 cam의 기준 프레임과 SIFT 매칭(그 cam의 바닥 점만) -> 영상 간 H -> 새 cam H.
+   - **자동 대응점 `setup_cam.py --auto` (2026-11-26, `autoh.py`)**: 같은 lot 다른 cam 기준. 아래 시험 뒤 구현.
+     국소 정밀화: 기준 cam들의 손 대응점을 G^-1로 예측, 기준 프레임을 G^-1로 편 패치를 ±24px NCC 탐색 -> RANSAC(0.3m).
+     일치점 최다 cam을 기준으로 (cam3->cam1 실패 회피), 50 미만이면 실패. 결과는 points.json -> 사람이 화면에서 확인.
+     평가 (각 cam을 모른다고 보고 나머지 두 cam으로): 손 점 기준 평균 0.09/0.16/0.09m, 최대 0.29/0.89/0.29m.
+     점유: test cam1·cam2 정확도 1.000 (손 H와 같음). tune cam3 치명 48 / 오판 26 (손 H 49 / 5).
+     검증점도 자동 점이라 표시 오차가 낙관적 (표시 최대 0.07m) -> map_overlay.png 눈 확인 필수.
+   - 자동 H 첫 시험 (SIFT만): H를 아는 cam의 기준 프레임과 SIFT 매칭(그 cam의 바닥 점만) -> 영상 간 H -> 새 cam H.
      lotA 세 cam 6쌍: 5쌍 평균 0.12~0.30m (최대 0.31~0.77m), 1쌍(cam3->cam1) 실패 (17m). 손 H 0.03~0.05m.
      탑뷰 ECC 정렬로 다듬어도 일관된 개선 없음. -> 칸 여유(0.34m)보다 오차가 커서 그대로는 못 씀. 첫 H(클릭 보조)로만 쓸 수 있음.
    - H 계산에 쓰지 않은 검증점 2~4개로 **재투영 오차(m)**를 계산해 H.json에 저장.
@@ -334,7 +340,8 @@ CV_Project/                   # 저장소 루트
     track.py                  # (3차) ByteTrack 래퍼
     occupancy.py              # 1차 판정, 가시성, 시간 보정
     footprint.py              # (2차) 바닥 영역 추정, 겹침 비율
-    box3d.py                  # (비교용) H + K로 카메라 복원, 3D 박스 맞추기 -> 차 바닥 (footprint.method: box3d)
+    box3d.py                  # H + K로 카메라 복원, 3D 박스 맞추기 -> 차 바닥 (기본 rect_and_box3d에서 침범 확인용)
+    autoh.py                  # 새 촬영 위치 대응점 자동 추정 (setup_cam.py --auto)
     slot_volume.py            # (비교용) Masmoudi 외: 칸 3D 상자의 안 가려진 부분 마스크 비율로 점유
     illegal.py                # (3차) 정지 시간 기반 이벤트
     baseline.py               # 논문 ② 방식
@@ -438,6 +445,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt && pip install -e .
 
 python tools/setup_cam.py --clip data/clips/lotA_cam3_mid        # lot·cam은 meta.json에서 읽음
+python tools/setup_cam.py --clip data/clips/lotA_cam4_mid --auto # 같은 lot 새 위치: 자동 대응점 -> 확인 (--no-gui = 바로 저장)
 python tools/build_map.py --lot lotA --cam lotA_cam3
 python -m parking.pipeline --clip data/clips/lotA_cam1_full --config configs/default.yaml
 python tools/sample_frames.py --clip data/clips/lotA_cam1_full --every-sec 5

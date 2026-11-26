@@ -74,6 +74,26 @@ python tools/setup_cam.py --clip data/clips/lotA_cam3_mid
 2. `v`로 검증점 2~4개를 찍습니다. H 계산에 쓰지 않고 오차 확인에만 씁니다.
 3. `s`로 저장합니다. 그 주차장의 첫 cam이면 지도 뼈대와 탑뷰 배경도 함께 만들어집니다.
 
+**같은 주차장의 새 촬영 위치는 자동으로** (`--auto`, 2026-11-26):
+```bash
+python tools/setup_cam.py --clip data/clips/lotA_cam4_mid --auto            # 자동 대응점 -> 화면에서 확인 후 s
+python tools/setup_cam.py --clip data/clips/lotA_cam4_mid --auto --no-gui   # 확인 없이 바로 저장
+```
+- 이미 설정한 cam들의 기준 프레임과 바닥 특징점(SIFT)을 맞춰 대략 H를 구합니다. 일치점이 가장 많은 cam을 기준으로 씁니다.
+- 그 cam들이 찍어 둔 주차선 모서리를 새 영상에서 주변 패치 매칭으로 정밀하게 다시 찾아 대응점으로 넣습니다.
+- 화면에서 격자와 점을 확인하고, 틀린 점은 `u`로 지우거나 직접 추가한 뒤 `s`로 저장합니다.
+- 시점이 너무 달라 일치점이 50개 미만이면 실패로 알리고, 그때는 손으로 찍습니다.
+- 검증점도 자동으로 찾은 점이라 표시되는 오차가 실제보다 작습니다. `map_overlay.png`를 꼭 눈으로 확인하세요.
+- 시험 결과 (lotA 세 cam을 하나씩 H를 모른다고 보고 나머지 두 cam으로 자동 계산):
+
+| cam | 자동 H 오차 (손 대응점 기준, 평균 / 최대) | 손 H | 점유 결과 (자동 H) | 점유 결과 (손 H) |
+|---|---|---|---|---|
+| cam1 (test) | 0.09 / 0.29m | 0.03 / 0.08m | 정확도 1.000 | 1.000 |
+| cam2 (test) | 0.16 / 0.89m | 0.05 / 0.16m | 정확도 1.000 | 1.000 |
+| cam3 (tune) | 0.09 / 0.29m | 0.04 / 0.10m | 치명 48 / 오판 26, 침범 장면 26·39·0 | 49 / 5, 25·40·0 |
+
+  자동 H는 손 H보다 2~3배 부정확하지만, 테스트 영상의 점유 결과는 같았습니다. cam3은 빈칸→점유 오판이 늘었습니다.
+
 ### 3.2 지도에 칸 그리기 (주차장마다 1회)
 ```bash
 python tools/build_map.py --lot lotA --cam lotA_cam3
@@ -173,6 +193,7 @@ E02,lotA_cam4_staged,pass_through,AISLE1,150.0,158.0
 - 처리 속도:
   - 검출: 약 0.33초/프레임 (RTX 4060, 영상 디코딩 포함)
   - 판정, 추적, 결과 영상 생성: 약 0.08초/프레임
+  - 판정만 (cam3, 프레임당 차 약 19대, 2026-11-26): 1차만 10ms, 사각형 30ms, 융합(기본, 3D 박스 포함) 57ms
   - 논문 ③은 장당 약 1.5초
 
 ### 4.3 2차: 칸 침범 판별
@@ -256,7 +277,8 @@ E02,lotA_cam4_staged,pass_through,AISLE1,150.0,158.0
 | `src/parking/contact.py` | 지면 접점 (마스크 볼록 껍질 아래 경계), 깊이 오프셋 |
 | `src/parking/occupancy.py` | 1차 판정, 가시성(판단불가), 다수결 시간 보정 |
 | `src/parking/footprint.py` | 2차 차 바닥 영역, 겹침 비율 |
-| `src/parking/box3d.py` | (비교용) H + 내부 파라미터로 카메라 복원, 3D 박스 맞추기 |
+| `src/parking/box3d.py` | H + 내부 파라미터로 카메라 복원, 3D 박스 맞추기 (침범 확인용) |
+| `src/parking/autoh.py` | 새 촬영 위치의 대응점 자동 추정 (SIFT + 국소 패치 매칭, `setup_cam.py --auto`) |
 | `src/parking/slot_volume.py` | (비교용) Masmoudi 외: 칸 3D 상자의 안 가려진 부분으로 점유 |
 | `src/parking/track.py`, `illegal.py` | 3차 ByteTrack, 통로 정지 시간 이벤트 |
 | `src/parking/baseline.py` | 논문 ② 방식 (설정 덮어쓰기로 같은 파이프라인 사용) |
