@@ -9,6 +9,7 @@ from parking.occupancy import slots_from_map
 
 def test_process_frame_assigns_cars_and_drops_duplicate():
     cfg = load_config("configs/default.yaml")
+    cfg["footprint"]["method"] = "rect"  # 3D 박스는 카메라 행렬 P가 필요 (test_box3d.py에서 따로 확인)
     cam = make_camera()
     slots = slots_from_map({"slots": slot_row((-5, 10), (5, 10), (-5, 15), 4, "A")})
     dets = []

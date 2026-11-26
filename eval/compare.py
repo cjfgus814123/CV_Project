@@ -22,7 +22,8 @@ from evaluate import evaluate  # noqa: E402
 # 이름: (설명, 설정 덮어쓰기). 기본 설정 = 제안 방식 (configs/default.yaml)
 S1 = {"footprint": {"enabled": False}}  # 1차만 (접점 1개로 판정)
 VARIANTS = {
-    "proposed": ("제안 (1차+2차): 지면 접점 + 차 바닥 영역 겹침 (점유 20%, 침범 25%) + 다수결", {}),
+    "proposed": ("제안 (1차+2차): 지면 접점 + 차 바닥 영역 겹침 (점유 20%, 침범 25%, 침범은 사각형·3D 박스 둘 다) + 다수결", {}),
+    "proposed_rect": ("제안, 침범도 사각형만 (2026-11-26 이전 기본)", {"footprint": {"method": "rect"}}),
     "proposed_occupy0.15": ("제안, 점유 겹침 기준 15% (논문 ③)", {"footprint": {"tau_occupy": 0.15}}),
     "proposed_no_smooth": ("제안, 시간 보정 없음", {"occupancy": {"smooth_n": 1}}),
     "proposed_straddle0.15": ("제안, 침범 기준 15% (논문 ③)", {"footprint": {"tau_occupy": 0.15, "tau_straddle": 0.15}}),
@@ -33,8 +34,6 @@ VARIANTS = {
                       {"contact": {"mode": "mask_lowest_mean", "depth_offset_m": 0.0}, "footprint": {"enabled": False},
                        "occupancy": {"boundary_tol_m": 0.0, "smooth_n": 1}, "quality": {"enabled": True}}),
     "box3d": ("제안 + 차 바닥 = 3D 박스 맞추기 밑면 (BoxCars 계열, 카메라 = H + K)", {"footprint": {"method": "box3d"}}),
-    "rect_and_box3d": ("융합: 점유 = 사각형, 침범 = 사각형과 3D 박스가 둘 다 침범인 칸만",
-                       {"footprint": {"method": "rect_and_box3d"}}),
     "slot_volume": ("Masmoudi 외: 칸 3D 상자의 안 가려진 부분이 마스크로 덮인 비율 >= 0.5", {"slot_volume": {"enabled": True}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
     "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),

@@ -39,7 +39,7 @@ quality:                    # (비교용) Laptiev 외 2026 식 (21): 배정 칸 
   r_min: 0.5                # 논문에 값 없음. 2026-11-26 tune: 0.5~0.9 모두 침범 오경보 89~199장, 오경보가 가장 적은 0.5
 
 footprint:                  # 2차
-  method: rect              # rect (보이는 바닥 경계 + 칸 방향 사각형) | box3d (3D 박스 맞추기, 비교용) | rect_and_box3d (침범은 둘 다 침범일 때만, 비교용)
+  method: rect_and_box3d    # rect_and_box3d (기본, 2026-11-26: 점유 = rect, 침범 = rect와 box3d 둘 다 침범인 칸만) | rect (보이는 바닥 경계 + 칸 방향 사각형, 비교용) | box3d (3D 박스 맞추기, 비교용)
   enabled: true             # 2차 적용: 칸 판정을 차 바닥 영역 겹침으로 (false = 1차 접점 판정만, 비교용)
   tau_occupy: 0.2           # 차 바닥 면적 대비 이 이상 겹친 칸은 모두 점유 (선 밟은 차의 옆 칸 포함). 2026-11-25 tune(줄 끝 점 추가한 H)
   crosswise_min_m: 3.0      # 접점이 통로에 있는 차: 보이는 바닥 경계가 칸 폭 방향으로 이 이상이고
