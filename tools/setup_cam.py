@@ -13,7 +13,10 @@
   v         대응점 / 검증점 모드 전환 (검증점은 H 계산에 안 쓰고 재투영 오차만 잼)
   r         바닥 가시 영역(ROI) 다각형 클릭 모드 전환 (지붕·나무에 가린 곳을 빼는 용도, 선택)
   g         1m 격자 겹쳐 보기 켜기/끄기 (H가 맞으면 격자가 주차선과 나란함)
-  u 되돌리기  s 저장  q 종료
+  m         지도 칸 겹쳐 보기 켜기/끄기 (지금 H로 칸을 그림 -> 주차선과 맞는지 바로 확인)
+  점 드래그   이미 찍은 점을 끌어 옮기기 (맵 좌표는 그대로, 위치만 고침)
+  오른쪽 클릭 가까운 점 지우기 (틀린 자동 점 골라 지우기)
+  u 되돌리기(마지막 점)  s 저장  q 종료
 점은 클릭할 때마다 cams/<cam>/points.json에 자동 저장 → 다시 실행하면 이어서 한다.
 
 맵 좌표 정하는 법:
@@ -83,7 +86,22 @@ def reference_points(data: Path, lot: str, cam: str) -> np.ndarray:
         h = json.loads(f.read_text(encoding="utf-8"))
         if h.get("lot_id") == lot and h.get("cam_id") != cam:
             out += [tuple(round(v, 3) for v in p["map"]) for p in h["correspondences"] + h["validation"]]
+    map_path = data / "lots" / lot / "map.json"
+    if map_path.exists():  # 지도의 칸 모서리 (선 중심선 교차점)도 추천
+        out += [tuple(round(v, 3) for v in q) for s in json.loads(map_path.read_text(encoding="utf-8"))["slots"]
+                for q in s["polygon"]]
     return np.array(sorted(set(out)), np.float64).reshape(-1, 2)
+
+
+def nearest_point(pts: dict, xy, r: float = 12.0):
+    """xy(영상 px)에서 r 안의 가장 가까운 대응점·검증점 -> (종류, 번호) 또는 None."""
+    best = None
+    for k in ("corr", "val"):
+        for i, p in enumerate(pts[k]):
+            d = float(np.hypot(p["img"][0] - xy[0], p["img"][1] - xy[1]))
+            if d <= r and (best is None or d < best[0]):
+                best = (d, k, i)
+    return best[1:] if best else None
 
 
 def suggest(xy_img, H, refs: np.ndarray, max_m: float = 1.0):
@@ -95,10 +113,19 @@ def suggest(xy_img, H, refs: np.ndarray, max_m: float = 1.0):
     return refs[d.argmin()] if d.min() <= max_m else None
 
 
-def draw(frame, pts, H, mode, show_grid, cursor, res, refs=None):
+def draw(frame, pts, H, mode, show_grid, cursor, res, refs=None, slots_map=None):
     out = frame.copy()
     h, w = frame.shape[:2]
     ref = (w / 2, h - 1)
+    if H is not None and slots_map:  # 지도 칸을 지금 H로 영상에 그림
+        for sid, poly in slots_map:
+            pieces = map_polyline_to_img(poly, H, ref, closed=True)
+            for p in pieces:
+                cv2.polylines(out, [np.int32(p)], True, (0, 255, 0), 1, cv2.LINE_AA)
+            if pieces:
+                c = np.concatenate(pieces).mean(0)
+                cv2.putText(out, sid, (int(c[0]) - 12, int(c[1]) + 4), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                            (0, 255, 255), 1, cv2.LINE_AA)
     if H is not None and refs is not None:  # 추천점: 다른 cam이 쓴 좌표가 이 화면에서 있어야 할 자리
         used = {tuple(p["map"]) for p in pts["corr"] + pts["val"]}
         for X, Y in refs:
@@ -138,9 +165,9 @@ def draw(frame, pts, H, mode, show_grid, cursor, res, refs=None):
         cm = transform_points(np.float32([cursor]), H)[0]
         cur = f"  cursor=({cm[0]:.2f},{cm[1]:.2f})m"
     lines = [f"mode={mode} (v: corr/val, r: roi)  corr={len(pts['corr'])} val={len(pts['val'])} roi={len(pts['roi'])}{cur}",
-             "click: add point -> type 'x y' in terminal (Enter = suggested +)   [g] grid  [u] undo  [s] save  [q] quit",
+             "click: add point (Enter = suggested +)  drag: move point  right-click: delete  [m] slots [g] grid [u] undo [s] save [q] quit",
              "red line = click -> where H puts its map coord (short = good)"]
-    cv2.rectangle(out, (0, 0), (1250, 92), (0, 0, 0), -1)
+    cv2.rectangle(out, (0, 0), (1400, 92), (0, 0, 0), -1)
     for i, t in enumerate(lines):
         cv2.putText(out, t, (10, 26 + 28 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.62, (255, 255, 255), 1, cv2.LINE_AA)
     return out
@@ -272,23 +299,51 @@ def main() -> None:
     if len(refs):
         print(f"추천점 {len(refs)}개 (같은 lot의 다른 cam 좌표). 첫 4점은 그 cam의 points.png를 보고 입력")
 
-    state = {"click": None, "cursor": None}
+    state = {"click": None, "cursor": None, "drag": None, "rclick": None, "moved": False}
+    map_path = lot_dir / "map.json"
+    slots_map = [(s["id"], s["polygon"]) for s in json.loads(map_path.read_text(encoding="utf-8"))["slots"]] \
+        if map_path.exists() else []
 
     def on_mouse(ev, x, y, *_):
-        if 0 <= x < w and 0 <= y < h:
-            state["cursor"] = (x, y)
-            if ev == cv2.EVENT_LBUTTONDOWN:
+        if not (0 <= x < w and 0 <= y < h):
+            return
+        state["cursor"] = (x, y)
+        if ev == cv2.EVENT_LBUTTONDOWN:
+            hit = nearest_point(pts, (x, y)) if mode != "roi" else None
+            if hit:  # 기존 점 위에서 누르면 드래그
+                state["drag"] = hit
+            else:
                 state["click"] = (x, y)
+        elif ev == cv2.EVENT_MOUSEMOVE and state["drag"]:
+            k, i = state["drag"]
+            pts[k][i]["img"] = [float(x), float(y)]
+            state["moved"] = True
+        elif ev == cv2.EVENT_LBUTTONUP and state["drag"]:
+            state["drag"] = None
+            pts_path.write_text(json.dumps(pts, indent=1))
+        elif ev == cv2.EVENT_RBUTTONDOWN:
+            state["rclick"] = (x, y)
 
     win = "setup_cam"
     cv2.namedWindow(win, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(win, 1600, 900)
     cv2.setMouseCallback(win, on_mouse)
-    mode, show_grid = "corr", True
+    mode, show_grid, show_slots = "corr", True, bool(slots_map)
     fitted = fit(pts, cfg)
     while True:
+        if state["moved"]:  # 드래그 중: H를 바로 다시 계산 (칸·격자가 따라 움직임)
+            state["moved"] = False
+            fitted = fit(pts, cfg)
+        if state["rclick"] is not None:
+            hit, state["rclick"] = nearest_point(pts, state["rclick"], 20.0), None
+            if hit:
+                p = pts[hit[0]].pop(hit[1])
+                print(f"지움: {hit[0]} ({p['map'][0]:g}, {p['map'][1]:g})")
+                pts_path.write_text(json.dumps(pts, indent=1))
+                fitted = fit(pts, cfg)
         H, res = (fitted[0], fitted[1]) if fitted else (None, None)
-        cv2.imshow(win, draw(frame, pts, H, mode, show_grid, state["cursor"], res, refs))
+        cv2.imshow(win, draw(frame, pts, H, mode, show_grid, state["cursor"], res, refs,
+                             slots_map if show_slots else None))
         key = cv2.waitKey(30) & 0xFF
         if state["click"] is not None:
             xy, state["click"] = [float(v) for v in state["click"]], None
@@ -319,6 +374,8 @@ def main() -> None:
             mode = "corr" if mode == "roi" else "roi"
         elif key == ord("g"):
             show_grid = not show_grid
+        elif key == ord("m"):
+            show_slots = not show_slots
         elif key == ord("u") and pts[mode]:
             pts[mode].pop()
             pts_path.write_text(json.dumps(pts, indent=1))
