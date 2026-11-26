@@ -21,7 +21,7 @@ from shapely.geometry import Point, Polygon
 
 from parking.contact import away_dir_map, contact_map, contact_point_img, lowest_mean_map
 from parking.detect import dedup, load_cache, run_detection
-from parking.box3d import bottom_polygon, camera_matrix, fit_box
+from parking.box3d import bottom_polygon, box_corners, camera_matrix, fit_box, project
 from parking.slot_volume import visible_regions, volume_states
 from parking.footprint import footprint_from_det, footprint_states, slot_axes, slot_overlaps
 from parking.homography import image_rect, map_polyline_to_img, map_to_bev_matrix, transform_points, visible_region_map
@@ -73,6 +73,9 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
                                                  b["rotate_gain"])
                 if det["box_iou"] >= b["min_iou"]:  # 잘 안 맞으면 (먼 차, 가려진 차) 사각형 그대로
                     fp = bottom_polygon(xy, th, tuple(b["size_m"]))
+                    det["box3d_img"] = project(P, box_corners(np.asarray(xy, float)[None], np.array([th]),
+                                                              tuple(b["size_m"]))[0])  # (8,2) 그리기용
+                    det["box3d_map"] = np.float32(fp.exterior.coords[:4])
             if fcfg.get("method") == "rect_and_box3d":  # 점유 = 사각형, 침범 = 사각형·3D 박스 둘 다
                 overlaps_b.append(slot_overlaps(fp, slots))
                 fp = fp_rect
@@ -175,10 +178,11 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
                       + (f"  illegal {sum(d.get('illegal', False) for d in dets)}" if tracker else ""))
             contacts_bev = transform_points(np.float32([d["contact_map"] for d in dets]).reshape(-1, 2), M) if dets else []
             fps_bev = [transform_points(d["footprint_map"], M) for d in dets if "footprint_map" in d]
+            boxes_bev = [transform_points(d["box3d_map"], M) for d in dets if "box3d_map" in d]
             img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain),
                              draw_map_view(bev, slots_bev, states, contacts_bev, uncertain, fps_bev, zones_bev,
                                            [bool(d.get("illegal")) for d in dets],
-                                           [d.get("track_id") for d in dets]), header,
+                                           [d.get("track_id") for d in dets], boxes_bev), header,
                              cfg["render"]["height"])
             if writer is None:
                 writer = cv2.VideoWriter(str(out_dir / "split_view.mp4"), cv2.VideoWriter_fourcc(*"mp4v"),

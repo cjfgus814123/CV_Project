@@ -35,6 +35,9 @@ def _fill(img: np.ndarray, polys: dict[str, list[np.ndarray]], states: dict[str,
     return out
 
 
+BOX3D_COLOR = (255, 128, 255)  # 연분홍 (BGR)
+
+
 def draw_frame_view(frame_img: np.ndarray, dets: list[dict], slots_img: dict, states: dict[str, int],
                     uncertain: set[str] = frozenset()) -> np.ndarray:
     """왼쪽: 원본 + 칸 폴리곤(H^-1로 투영) + 검출 껍질·접점. dets에는 'contact_img', 'slot', 'truncated'가 있어야 함."""
@@ -43,6 +46,10 @@ def draw_frame_view(frame_img: np.ndarray, dets: list[dict], slots_img: dict, st
         if d["mask_polys_img"]:
             hull = cv2.convexHull(np.concatenate([np.int32(p) for p in d["mask_polys_img"]]))
             cv2.polylines(out, [hull], True, (255, 220, 0), 1, cv2.LINE_AA)
+        if "box3d_img" in d:  # (비교용) 3D 박스 철사틀: 밑면 4점 + 윗면 4점
+            q = np.int32(d["box3d_img"])
+            for a, b in [(i, (i + 1) % 4) for i in range(4)] + [(i + 4, (i + 1) % 4 + 4) for i in range(4)] + [(i, i + 4) for i in range(4)]:
+                cv2.line(out, tuple(q[a]), tuple(q[b]), BOX3D_COLOR, 1, cv2.LINE_AA)
         col = (0, 255, 255) if d["slot"] else (255, 0, 255)  # 칸에 배정 안 된 접점(통로 등)은 자홍
         if d.get("illegal"):
             col = ILLEGAL_COLOR
@@ -59,13 +66,15 @@ def draw_frame_view(frame_img: np.ndarray, dets: list[dict], slots_img: dict, st
 def draw_map_view(bev_img: np.ndarray, slots_bev: dict, states: dict[str, int], contacts_bev: np.ndarray,
                   uncertain: set[str] = frozenset(), footprints_bev: list | None = None,
                   zones_bev: list | None = None, illegal: list[bool] | None = None,
-                  track_ids: list | None = None) -> np.ndarray:
+                  track_ids: list | None = None, boxes_bev: list | None = None) -> np.ndarray:
     """오른쪽: map_bev 위 칸 상태 색칠 + (2차) 차 바닥 사각형 + (3차) 통로·금지구역 테두리 + 접점 (불법주차는 주황)."""
     out = _fill(bev_img, slots_bev, states, uncertain, 0.45, 1, 0.38)
     for z in zones_bev or []:
         cv2.polylines(out, [np.int32(z).reshape(-1, 1, 2)], True, (200, 200, 200), 1, cv2.LINE_AA)
     for fp in footprints_bev or []:
         cv2.polylines(out, [np.int32(fp).reshape(-1, 1, 2)], True, (255, 255, 255), 1, cv2.LINE_AA)
+    for bx in boxes_bev or []:  # (비교용) 3D 박스 밑면
+        cv2.polylines(out, [np.int32(bx).reshape(-1, 1, 2)], True, BOX3D_COLOR, 1, cv2.LINE_AA)
     for i, p in enumerate(np.asarray(contacts_bev).reshape(-1, 2)):
         bad = bool(illegal and illegal[i])
         cv2.circle(out, tuple(np.int32(p)), 7 if bad else 4, ILLEGAL_COLOR if bad else (0, 255, 255), -1)
