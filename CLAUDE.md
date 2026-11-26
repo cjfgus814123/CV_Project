@@ -125,7 +125,7 @@ outputs/<clip_id>/                      # 실행 결과 (영상, CSV, 캐시)
 ### 5.2 영상 처리 단계 (clip마다)
 
 ```
-clip → 프레임 샘플링(기본 2fps, 3차도 같은 캐시 사용 — 5.5 3차 구현 참고)
+clip → 프레임 샘플링(기본 10fps (2026-11-26, 이전 2fps). 3차도 같은 캐시 사용)
      → [원본 프레임] undistort(선택) → YOLO-seg 검출 (car, bus, truck)
      → (3차) ByteTrack 추적
      → 지면 접점 추출 → H로 맵 좌표 변환
@@ -136,6 +136,13 @@ clip → 프레임 샘플링(기본 2fps, 3차도 같은 캐시 사용 — 5.5 3
 - **YOLO는 원본(비스듬한) 프레임에 돌린다.** 탑뷰로 편 이미지에서 검출하지 않는다 (차가 늘어나고 흐려져 검출 성능이 떨어짐).
 - 이미지 전체를 펴지 않고 **점 좌표만** `cv2.perspectiveTransform`으로 변환한다.
 - 무거운 검출 결과는 JSONL로 캐시하고, 판정·평가는 캐시를 읽어 반복 실행한다.
+  캐시 이름은 fps별 (`detect.cache_name`: 2fps = detections.jsonl, 그 외 detections_<fps>fps.jsonl).
+  원본 30fps에서 정수 간격만 가능 (20 -> 실제 15fps). GT 프레임(2fps 캐시에서 고른 15의 배수)이 들어가려면 2·10·30fps.
+- 시간 설정은 초 단위 (`occupancy.smooth_sec` 2.5 = 2fps 5프레임, `track.buffer_sec` 10).
+- **10fps 결과 (2026-11-26)**: 2fps와 같음. tune cam3 치명 50 / 오판 5 / 침범 장면 26·40·0 (2fps 49 / 5 / 25·40·0),
+  test cam1·cam2 정확도 1.000. 검출 약 0.32초/프레임 -> 5분 clip 약 16분.
+- 결과 영상 (`render.full_fps: true`): 원본 모든 프레임(30fps)에 직전 검출 결과를 덧그려 실제 속도. cam3 14분 = 약 1.8GB (mp4v).
+- 장시간 실행은 `systemd-inhibit --what=sleep:idle ...`로 감싼다 (2026-11-26 노트북 절전 후 CUDA가 죽어 검출이 CPU로 3시간 멈춤).
 - 중복 검출 제거: 작은 박스 면적 기준 겹침 ≥ `model.dedup_ios`면 신뢰도 낮은 쪽을 버린다 (문 열린 차·사람 때문에 큰 박스 안에 작은 박스가 또 잡힘. IoU로는 안 걸러짐).
 
 ### 5.3 검출 모델
