@@ -33,6 +33,8 @@ VARIANTS = {
                       {"contact": {"mode": "mask_lowest_mean", "depth_offset_m": 0.0}, "footprint": {"enabled": False},
                        "occupancy": {"boundary_tol_m": 0.0, "smooth_n": 1}, "quality": {"enabled": True}}),
     "box3d": ("제안 + 차 바닥 = 3D 박스 맞추기 밑면 (BoxCars 계열, 카메라 = H + K)", {"footprint": {"method": "box3d"}}),
+    "rect_and_box3d": ("융합: 점유 = 사각형, 침범 = 사각형과 3D 박스가 둘 다 침범인 칸만",
+                       {"footprint": {"method": "rect_and_box3d"}}),
     "slot_volume": ("Masmoudi 외: 칸 3D 상자의 안 가려진 부분이 마스크로 덮인 비율 >= 0.5", {"slot_volume": {"enabled": True}}),
     "baseline_paper2": ("베이스라인(논문 ②): 박스 중심, 허용 거리 0, 시간 보정 없음", BASELINE),
     "baseline_smooth": ("베이스라인 + 다수결", {**BASELINE, "occupancy": {**BASELINE["occupancy"], "smooth_n": 5}}),

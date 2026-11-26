@@ -39,12 +39,13 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
     """검출 1프레임 -> (접점·배정 칸이 붙은 검출 목록, 칸 상태 {id: 0/1/2}). 가시성·시간 보정 전.
 
     footprint.enabled면 차 바닥 영역 겹침으로 판정 (2차), 아니면 접점이 든 칸 (1차).
-    footprint.method: rect (보이는 바닥 경계 + 칸 방향 사각형) | box3d (3D 박스 맞추기, P = 투영 행렬 필요).
+    footprint.method: rect (보이는 바닥 경계 + 칸 방향 사각형) | box3d (3D 박스 맞추기, P = 투영 행렬 필요)
+      | rect_and_box3d (점유는 rect, 침범은 rect와 box3d가 둘 다 침범인 칸만).
     regions가 있으면 (slot_volume.enabled, 비교용) 칸 상태는 칸 3D 상자의 안 가려진 부분이 마스크로 덮인 비율로 정한다.
     """
     c, o, fcfg = cfg["contact"], cfg["occupancy"], cfg["footprint"]
     q = cfg.get("quality", {"enabled": False})
-    out, states, overlaps, poor = [], dict.fromkeys(slots, FREE), [], set()
+    out, states, overlaps, overlaps_b, poor = [], dict.fromkeys(slots, FREE), [], [], set()
     for d in dedup(dets, cfg["model"]["dedup_ios"]):
         pt_img, trunc = contact_point_img(d["mask_polys_img"], d["bbox_img"], c["mode"], image_size, c["edge_margin_px"])
         if c["mode"] == "mask_lowest_mean" and d["mask_polys_img"]:  # Laptiev 외 (2026)
@@ -62,7 +63,8 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
             orient = slots[nearest_slot(pt_map, slots, float("inf"))]  # 차 방향 = 가장 가까운 칸 방향
             fp = footprint_from_det(d["mask_polys_img"], H, away_dir_map(pt_img, H), orient, cfg["geometry"]["car_size_m"],
                                     None if sid else (fcfg["crosswise_min_m"], fcfg["crosswise_ratio"]))
-            if fcfg.get("method", "rect") == "box3d":  # 사각형 중심에서 시작해 3D 박스를 맞춘다
+            fp_rect = fp
+            if fcfg.get("method", "rect") in ("box3d", "rect_and_box3d"):  # 사각형 중심에서 시작해 3D 박스를 맞춘다
                 b = cfg["box3d"]
                 v = slot_axes(orient)[1]
                 xy, th, det["box_iou"] = fit_box(d["mask_polys_img"], P, np.asarray(fp.centroid.coords[0]),
@@ -71,6 +73,9 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
                                                  b["rotate_gain"])
                 if det["box_iou"] >= b["min_iou"]:  # 잘 안 맞으면 (먼 차, 가려진 차) 사각형 그대로
                     fp = bottom_polygon(xy, th, tuple(b["size_m"]))
+            if fcfg.get("method") == "rect_and_box3d":  # 점유 = 사각형, 침범 = 사각형·3D 박스 둘 다
+                overlaps_b.append(slot_overlaps(fp, slots))
+                fp = fp_rect
             det["footprint_map"] = np.float32(fp.exterior.coords[:4])
             overlaps.append(slot_overlaps(fp, slots))
         elif sid is not None:
@@ -79,7 +84,11 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
     if regions is not None:
         return out, volume_states([d["mask_polys_img"] for d in out], regions, cfg["slot_volume"]["tau"])[0]
     if fcfg["enabled"]:
-        return out, footprint_states(overlaps, slots, fcfg["tau_occupy"], fcfg["tau_straddle"])
+        st = footprint_states(overlaps, slots, fcfg["tau_occupy"], fcfg["tau_straddle"])
+        if fcfg.get("method") == "rect_and_box3d":
+            sb = footprint_states(overlaps_b, slots, fcfg["tau_occupy"], fcfg["tau_straddle"])
+            st = {k: OCCUPIED if v == ENCROACH and sb[k] != ENCROACH else v for k, v in st.items()}
+        return out, st
     for ov in overlaps:
         states.update(dict.fromkeys(ov, OCCUPIED))
     states.update(dict.fromkeys(poor, ENCROACH))
@@ -101,7 +110,7 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
     slots = slots_from_map(m)
     P = regions = None
     sv = cfg.get("slot_volume", {"enabled": False})
-    if cfg["footprint"].get("method", "rect") == "box3d" or sv["enabled"]:
+    if cfg["footprint"].get("method", "rect") in ("box3d", "rect_and_box3d") or sv["enabled"]:
         K = np.array(json.load(open(cfg["box3d"]["intrinsics"]))["K"])
         P = camera_matrix(H, K)
     if sv["enabled"]:
