@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -19,6 +21,7 @@ import cv2
 import numpy as np
 from shapely.geometry import Point, Polygon
 
+from parking.autoh import lot_polygon
 from parking.contact import away_dir_map, contact_map, contact_point_img, lowest_mean_map
 from parking.detect import cache_name, dedup, load_cache, run_detection
 from parking.box3d import bottom_polygon, box_corners, camera_matrix, fit_box, project
@@ -35,12 +38,13 @@ from parking.track import Tracker
 
 def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
                   image_size: tuple[int, int], P: np.ndarray | None = None,
-                  regions: dict | None = None) -> tuple[list[dict], dict[str, int]]:
+                  regions: dict | None = None, area: Polygon | None = None) -> tuple[list[dict], dict[str, int]]:
     """검출 1프레임 -> (접점·배정 칸이 붙은 검출 목록, 칸 상태 {id: 0/1/2}). 가시성·시간 보정 전.
 
     footprint.enabled면 차 바닥 영역 겹침으로 판정 (2차), 아니면 접점이 든 칸 (1차).
     footprint.method: rect (보이는 바닥 경계 + 칸 방향 사각형) | box3d (3D 박스 맞추기, P = 투영 행렬 필요)
       | rect_and_box3d (점유는 rect, 침범은 rect와 box3d가 둘 다 침범인 칸만).
+    area가 있으면 접점(맵)이 그 밖인 검출은 버린다 (주차장 뒤 도로·다른 주차장의 차).
     regions가 있으면 (slot_volume.enabled, 비교용) 칸 상태는 칸 3D 상자의 안 가려진 부분이 마스크로 덮인 비율로 정한다.
     """
     c, o, fcfg = cfg["contact"], cfg["occupancy"], cfg["footprint"]
@@ -53,6 +57,8 @@ def process_frame(dets: list[dict], H: np.ndarray, slots: dict, cfg: dict,
             pt_map = (pt_map + away_dir_map(pt_img, H) * c["depth_offset_m"]).astype(np.float32)
         else:
             pt_map, pts_map = contact_map(pt_img, H, c["depth_offset_m"]), None
+        if area is not None and not area.contains(Point(*np.asarray(pt_map, float).ravel()[:2])):
+            continue
         sid = nearest_slot(pt_map, slots, o["boundary_tol_m"])
         det = {**d, "contact_img": pt_img, "contact_map": pt_map, "slot": sid, "truncated": trunc}
         if q["enabled"] and sid is not None and pts_map is not None:  # 식 (21): 칸 안 접점 비율 < r_min = 잘못 주차
@@ -112,6 +118,8 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
     cam, m = load_cam(data / "cams" / meta["cam"]), load_map(data / "lots" / meta["lot"])
     H, image_size = cam["H"], tuple(cam["image_size"])
     slots = slots_from_map(m)
+    la = cfg.get("lot_area", {"enabled": False})
+    area = lot_polygon(m, la["buffer_m"]) if la["enabled"] else None
     P = regions = None
     sv = cfg.get("slot_volume", {"enabled": False})
     if cfg["footprint"].get("method", "rect") in ("box3d", "rect_and_box3d") or sv["enabled"]:
@@ -150,13 +158,13 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
         full_fps = cfg["render"].get("full_fps", False)
         step = max(1, round(src_fps / fps_s))
 
-    history, t0 = [], time.time()
+    history, n_cars, t0 = [], [], time.time()
     with open(out_dir / "occupancy.csv", "w", newline="") as f, open(out_dir / "occupancy_raw.csv", "w", newline="") as fr:
         w, wr = csv.writer(f), csv.writer(fr)
         w.writerow(["frame_idx", "time_sec", "slot_id", "state"])
         wr.writerow(["frame_idx", "time_sec", "slot_id", "state"])
         for n, rec in enumerate(recs):
-            dets, raw = process_frame(rec["dets"], H, slots, cfg, image_size, P, regions)
+            dets, raw = process_frame(rec["dets"], H, slots, cfg, image_size, P, regions, area)
             raw = apply_visibility(raw, vis, o["vis_unknown"])
             if tracker:  # 3차: 추적 + 구역 안 정지 시간
                 for d, tid in zip(dets, tracker.update(dets)):
@@ -167,6 +175,8 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
                     d["illegal"] = d["track_id"] in now
             history.append(raw)
             states = temporal_smooth(history, smooth_n)
+            n_cars.append(len(dets))
+            cars = int(np.median(n_cars[-smooth_n:]))  # 화면 표시용 (검출이 잡혔다 놓쳤다 하는 깜빡임 제거)
             for sid in slots:
                 w.writerow([rec["frame_idx"], rec["time_sec"], sid, states[sid]])
                 wr.writerow([rec["frame_idx"], rec["time_sec"], sid, raw[sid]])
@@ -189,7 +199,7 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
                 if not ok:
                     break
                 header = (f"{clip.name}  t={i / src_fps:6.1f}s  free {n_free} / {len(judged)}  "
-                          f"(unknown {len(slots) - len(judged)})  cars {len(dets)}"
+                          f"(unknown {len(slots) - len(judged)})  cars {cars}"
                           + (f"  illegal {sum(d.get('illegal', False) for d in dets)}" if tracker else ""))
                 img = split_view(draw_frame_view(frame, dets, slots_img, states, uncertain), right, header,
                                  cfg["render"]["height"])
@@ -201,6 +211,13 @@ def run(clip: Path, cfg: dict, out_root: Path, data: Path, video: bool, out_dir:
                 print(f"  {n}/{len(recs)} ({time.time() - t0:.0f}s)")
     if writer is not None:
         writer.release()
+        if shutil.which("ffmpeg"):  # mp4v -> H.264 (약 1/5~1/10 크기, 어디서나 재생)
+            src = out_dir / "split_view.mp4"
+            tmp = out_dir / "split_view_h264.mp4"
+            r = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(src), "-c:v", "libx264", "-crf", "23",
+                                "-preset", "fast", "-pix_fmt", "yuv420p", str(tmp)])
+            if r.returncode == 0:
+                tmp.replace(src)
     if stops:
         events = stops.finish()
         with open(out_dir / "events.csv", "w", newline="") as f:
