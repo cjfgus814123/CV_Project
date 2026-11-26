@@ -241,8 +241,12 @@ def main() -> None:
     ap.add_argument("--out", default="outputs")
     ap.add_argument("--data", default="data")
     ap.add_argument("--no-video", action="store_true", help="CSV만 만든다")
+    ap.add_argument("--fps", type=float, default=None, help="검출 fps (기본 configs의 sampling.fps). 2·10·30 권장")
     a = ap.parse_args()
-    run(Path(a.clip), load_config(a.config), Path(a.out), Path(a.data), not a.no_video)
+    cfg = load_config(a.config)
+    if a.fps:
+        cfg["sampling"]["fps"] = a.fps
+    run(Path(a.clip), cfg, Path(a.out), Path(a.data), not a.no_video)
 
 
 if __name__ == "__main__":
