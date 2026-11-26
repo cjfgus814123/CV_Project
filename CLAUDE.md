@@ -310,7 +310,9 @@ lotA_cam1_full,120,A01,1
 - **팀 라벨링 운영 (2026-11-26)**: 본인 + 팀원 1명 (둘 다 Ubuntu). 팀원용 절차는 `team_guide.md`.
   - 영상·GT는 Google Drive (`CV_GT/1_꾸러미` zip -> `2_완료/<clip>__<이름>.csv`). **git push는 저장소 주인만**, GT는 git에 넣지 않음.
   - 꾸러미 = `data/clips/<clip>/{meta.json, gt_frames/}` + `data/cams/<cam>/H.json` + `data/lots/<lot>/map.json` (GPU·원본 영상 불필요).
-  - 공통 조각 1개는 둘 다 따로 라벨링 -> 사람 간 일치도.
+  - 라벨링은 팀원 1명이 전부 (2026-11-26 결정, 관리자는 라벨링 안 함) -> 사람 간 일치도는 측정 안 함.
+  - 반영: `tools/import_gt.py --from <2_완료 폴더> --event-clips data/clips/lotA_cam7_t*` (검사 포함).
+    불법주차 확인용 영상: `tools/make_event_video.py` (통로 테두리 + 시각만, 판정 없음).
   - 새 영상 (2026-11-26 촬영): 5~7분 2개 + 2시간 30분 1개 (처음 2분 흔들림, 2시간 10분 이후 어두움 -> 테스트 제외). 모두 test.
     불법주차 연출은 긴 영상 처음 15분 안에만. 나머지 구간은 빈 gt_events.csv (오경보 평가).
   - clip 구성 (카메라 고정 구간은 SIFT 정합으로 확인, 3px 이상 이동 제외):
