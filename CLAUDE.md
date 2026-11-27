@@ -311,7 +311,7 @@ lotA_cam1_full,120,A01,1
   - 영상·GT는 Google Drive (`CV_GT/1_꾸러미` zip -> `2_완료/<clip>__<이름>.csv`). **git push는 저장소 주인만**, GT는 git에 넣지 않음.
   - 꾸러미 = `data/clips/<clip>/{meta.json, gt_frames/}` + `data/cams/<cam>/H.json` + `data/lots/<lot>/map.json` (GPU·원본 영상 불필요).
   - 라벨링은 팀원 1명이 전부 (2026-11-26 결정, 관리자는 라벨링 안 함) -> 사람 간 일치도는 측정 안 함.
-  - 반영: `tools/import_gt.py --from <2_완료 폴더> --event-clips data/clips/lotA_cam7_t*` (검사 포함).
+  - 반영: `tools/import_gt.py --from <2_완료 폴더> --event-clips data/clips/lotA_cam7_t* data/clips/lotA_cam8_t*` (검사 포함).
     불법주차 확인용 영상: `tools/make_event_video.py` (통로 테두리 + 시각만, 판정 없음).
   - 새 영상 (2026-11-26 촬영): 5~7분 2개 + 2시간 30분 1개 (처음 2분 흔들림, 2시간 10분 이후 어두움 -> 테스트 제외). 모두 test.
     불법주차 연출은 긴 영상 처음 15분 안에만. 나머지 구간은 빈 gt_events.csv (오경보 평가).
@@ -322,7 +322,7 @@ lotA_cam1_full,120,A01,1
     lotA_cam8_t00~t11 (20261127_092233, 3:04:09 촬영 09:22~. 고정 구간 200~11025s를 15분 조각 12개, 마지막 925s.
     3:20까지 자세 조정, 3:03:50 이후 이동. 끝까지 밝음. cam7과 위치 다름 (820px)).
   - H: cam4~6은 --auto(연쇄: cam3->4->5->6) 후 사용자가 수정, cam7은 직접 클릭 (자동은 실패: 시점이 너무 다름). cam8은 --auto(기준 cam4, 26점) 후 사용자 수정
-    (모든 점 5px 이하, 미터 오차 최대는 D줄 뒷변 0.36~0.44m = 먼 줄 깊이 방향 4~5px).
+    (2차 수정 후 검증 최대 0.15m, 대응점 최대 D줄 뒷변 0.70m = 3.6px. 먼 줄 깊이 방향이라 유지). cam8은 불법주차 연출 없음 -> 빈 gt_events.csv.
   - 꾸러미 `tools/make_label_pack.py`: 프레임 = 15의 배수 번호, every_sec 간격 + 주차장 영역 픽셀 변화 0.5% 이상 (최소 3s).
     짧은 영상 5s, cam7_t00 10s, t01~t07 60s -> 총 436장. cam8_t00~t11 60s (+변화) -> 410장. 검출: 짧은 영상·t00 10fps, t01~t07 2fps.
 
